@@ -27,29 +27,14 @@ class RhythmicMode(MelodicMode):
         # Rhythmic does not have octave buttons
         pass
 
+    def activate(self):
+        super().activate()  # si tu as une logique d’activation de base
+        # Forcer le feedback Push 2 complet
+        self.app.sequencer_controller.update_push_feedback()
+
     def update_pads(self):
-        color_matrix = []
-        for i in range(0, 8):
-            row_colors = []
-            for j in range(0, 8):
-                corresponding_midi_note = self.pad_ij_to_midi_note([i, j])
-                cell_color = definitions.BLACK
-                if i >= 4 and j < 4:
-                    # This is the main 4x4 grid
-                    cell_color = self.app.track_selection_mode.get_current_track_color()
-                elif i >= 4 and j >= 4:
-                    cell_color = definitions.GRAY_LIGHT
-                elif i < 4 and j < 4:
-                    cell_color = definitions.GRAY_LIGHT
-                elif i < 4 and j >= 4:
-                    cell_color = definitions.GRAY_LIGHT
-                if self.is_midi_note_being_played(corresponding_midi_note):
-                    cell_color = definitions.NOTE_ON_COLOR
+        pass
 
-                row_colors.append(cell_color)
-            color_matrix.append(row_colors)
-
-        self.push.pads.set_pads_color(color_matrix)
 
     def on_button_pressed(self, button_name):
         if button_name == push2_python.constants.BUTTON_OCTAVE_UP or button_name == push2_python.constants.BUTTON_OCTAVE_DOWN:
