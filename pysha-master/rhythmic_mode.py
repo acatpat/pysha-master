@@ -59,19 +59,13 @@ class RhythmicMode(MelodicMode):
             # For the other buttons, refer to the base class
             super().on_button_pressed(button_name)
 
-    def on_pad_pressed(self, pad_ij, velocity):
-        """
-        Intercepte les pads du mode Rythmic avant qu'ils partent vers Pyramid.
-        """
-        # Convertit le pad en note MIDI selon la grille rythmique
+    def on_pad_pressed(self, pad_n, pad_ij, velocity):
         midi_note = self.pad_ij_to_midi_note(pad_ij)
 
-        # ➜ Si le mode séquenceur est activé, on renvoie au SequencerController
-        if getattr(self.app, "sequencer_mode_enabled", False):
-            if hasattr(self.app, "sequencer_controller"):
-                self.app.sequencer_controller.handle_rhythmic_input(midi_note, is_note_on=True)
+        if hasattr(self.app, "sequencer_controller"):
+            self.app.sequencer_controller.handle_rhythmic_input(midi_note)
             return True
-        
 
-        # ➜ Sinon, comportement normal de Pysha → envoie à Pyramid via MelodicMode
-        return super().on_pad_pressed(pad_ij, velocity)
+        return super().on_pad_pressed(pad_n, pad_ij, velocity)
+
+

@@ -71,32 +71,44 @@ class SequencerController:
     # SÉLECTION DE PAD
     # -------------------------------------------------------------------------
     def _select_pad(self, pad_name):
-        self.selected_pad = pad_name
-        print(f"[SEQ] Pad sélectionné : {pad_name}")
+        # Convertir pad_name en index
+        name_to_index = {
+            "kick": 0,
+            "snare": 1,
+            "closed_hh": 2,
+            "open_hh": 3
+            # compléter si nécessaire
+        }
+        idx = name_to_index.get(pad_name)
+        if idx is None:
+            print(f"[SEQ] Pad inconnu : {pad_name}")
+            return
 
-        # Mise à jour de l'UI (si tu en as une)
-        if self.window:
-            self.window.highlight_pad(pad_name)
+        self.window.selected_pad = idx
+        print(f"[SEQ] Pad sélectionné : {pad_name} (index {idx})")
+
+        # UI
+        self.window.update_pad_display()
+        self.window.update_steps_display()
 
     # -------------------------------------------------------------------------
     # TOGGLE D’UN STEP
     # -------------------------------------------------------------------------
     def _toggle_step(self, step_index):
-        """
-        Active/désactive un step du pattern actif pour l'instrument sélectionné.
-        """
-        if self.selected_pad is None:
+        pad = self.window.selected_pad
+        if pad is None:
             print("[SEQ] Aucun pad sélectionné → ignore l’appui.")
             return
 
-        print(f"[SEQ] Toggle step {step_index} pour {self.selected_pad}")
+        print(f"[SEQ] Toggle step {step_index} pour pad {pad}")
 
-        # On bascule dans le modèle
-        self.model.toggle_step(self.selected_pad, step_index)
+        # Basculer le step
+        self.window.toggle_step(step_index)
 
-        # UI
-        if self.window:
-            self.window.update_step_leds()
+        # Mise à jour visuelle
+        self.window.update_steps_display()
+
+
 
     # -------------------------------------------------------------------------
     # ACTIONS GLOBALES

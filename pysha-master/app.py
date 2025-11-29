@@ -109,7 +109,7 @@ class PyshaApp(object):
             sequencer_model=self.sequencer_window.steps,
             sequencer_window=self.sequencer_window
         )
-        self.sequencer_mode_enabled = False
+
 
         # Initialisation des modes
         self.init_modes(settings)
@@ -150,7 +150,7 @@ class PyshaApp(object):
             sequencer_model=self.sequencer_window,  # ici le modèle minimal est la fenêtre
             sequencer_window=self.sequencer_window
         )
-        self.sequencer_mode_enabled = True  # active le mode séquenceur
+
         self.sequencer_window.show()  # affiche la fenêtre
 
 
