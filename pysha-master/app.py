@@ -1,3 +1,6 @@
+# app.py
+
+import sys
 import json
 import os
 import platform
@@ -5,10 +8,13 @@ import time
 import traceback
 
 import cairo
-import definitions
-import mido
 import numpy
+import mido
 import push2_python
+
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
+
 
 from melodic_mode import MelodicMode
 from track_selection_mode import TrackSelectionMode
@@ -21,8 +27,12 @@ from midi_cc_mode import MIDICCMode
 from preset_selection_mode import PresetSelectionMode
 from ddrm_tone_selector_mode import DDRMToneSelectorMode
 
+from controller.sequencer_controller import SequencerController
+from ui.sequencer_window import SequencerWindow
 from display_utils import show_notification
+import definitions
 
+app = None
 
 class PyshaApp(object):
 
@@ -65,6 +75,11 @@ class PyshaApp(object):
     last_cp_value_recevied_time = 0
 
     def __init__(self):
+        # --- Attributs requis par les méthodes de mode ---
+        self.active_modes = []
+        self.previously_active_mode_for_xor_group = {}
+        
+        # --- Chargement des paramètres ---
         if os.path.exists('settings.json'):
             settings = json.load(open('settings.json'))
         else:
@@ -75,12 +90,34 @@ class PyshaApp(object):
         self.target_frame_rate = settings.get('target_frame_rate', 60)
         self.use_push2_display = settings.get('use_push2_display', True)
 
-        self.init_midi_in(device_name=settings.get('default_midi_in_device_name', None))
-        self.init_midi_out(device_name=settings.get('default_midi_out_device_name', None))
-        self.init_notes_midi_in(device_name=settings.get('default_notes_midi_in_device_name', None))
+        # Initialisation MIDI
+        #self.init_midi_in(device_name=settings.get('default_midi_in_device_name', None))
+        #self.init_midi_out(device_name=settings.get('default_midi_out_device_name', None))
+        #self.init_notes_midi_in(device_name=settings.get('default_notes_midi_in_device_name', None))
+
+        # Initialisation Push2
         self.init_push()
 
+        # --- Séquenceur interne ---
+        from controller.sequencer_controller import SequencerController
+        from ui.sequencer_window import SequencerWindow  # Assure-toi que ce chemin est correct
+
+        self.sequencer_window = SequencerWindow()  # UI
+        self.sequencer_window.show()
+        self.sequencer_controller = SequencerController(
+            app=self,
+            sequencer_model=self.sequencer_window.steps,
+            sequencer_window=self.sequencer_window
+        )
+        self.sequencer_mode_enabled = False
+
+        # Initialisation des modes
         self.init_modes(settings)
+
+        # Lier le séquenceur au mode rythmique
+        self.rhyhtmic_mode.sequencer_controller = self.sequencer_controller
+
+            ###
 
     def init_modes(self, settings):
         self.main_controls_mode = MainControlsMode(self, settings=settings)
@@ -88,6 +125,8 @@ class PyshaApp(object):
 
         self.melodic_mode = MelodicMode(self, settings=settings)
         self.rhyhtmic_mode = RhythmicMode(self, settings=settings)
+        # Passer le controller de séquenceur à la RhythmicMode
+        self.rhyhtmic_mode.sequencer_controller = self.sequencer_controller
         self.slice_notes_mode = SliceNotesMode(self, settings=settings)
         self.set_melodic_mode()
 
@@ -101,6 +140,20 @@ class PyshaApp(object):
 
         self.settings_mode = SettingsMode(self, settings=settings)
 
+    from controller.sequencer_controller import SequencerController
+    from ui.sequencer_window import SequencerWindow
+
+    def init_sequencer(self):
+        self.sequencer_window = SequencerWindow()
+        self.sequencer_controller = SequencerController(
+            app=self,
+            sequencer_model=self.sequencer_window,  # ici le modèle minimal est la fenêtre
+            sequencer_window=self.sequencer_window
+        )
+        self.sequencer_mode_enabled = True  # active le mode séquenceur
+        self.sequencer_window.show()  # affiche la fenêtre
+
+
     def get_all_modes(self):
         return [getattr(self, element) for element in vars(self) if isinstance(getattr(self, element), definitions.PyshaMode)]
 
@@ -113,9 +166,9 @@ class PyshaApp(object):
             if rotation_finished:
                 self.active_modes = [mode for mode in self.active_modes if mode != self.settings_mode]
                 self.settings_mode.deactivate()
-        else:
-            self.active_modes.append(self.settings_mode)
-            self.settings_mode.activate()
+            else:
+                self.active_modes.append(self.settings_mode)
+                self.settings_mode.activate()
 
     def toggle_ddrm_tone_selector_mode(self):
         if self.is_mode_active(self.ddrm_tone_selector_mode):
@@ -483,37 +536,35 @@ class PyshaApp(object):
             self.update_push2_buttons()
             self.buttons_need_update = False
 
-    def run_loop(self):
-        print('Pysha is runnnig...')
-        try:
-            while True:
-                before_draw_time = time.time()
+    def run_loop_iteration(self):
+        """
+        Une seule itération de la boucle Pysha.
+        Appelée par le QTimer pour que Qt continue à traiter les événements.
+        """
+        before_draw_time = time.time()
 
-                # Draw ui
-                self.update_push2_display()
+        # Mise à jour de l'affichage Push
+        self.update_push2_display()
 
-                # Frame rate measurement
-                now = time.time()
-                self.current_frame_rate_measurement += 1
-                if time.time() - self.current_frame_rate_measurement_second > 1.0:
-                    self.actual_frame_rate = self.current_frame_rate_measurement
-                    self.current_frame_rate_measurement = 0
-                    self.current_frame_rate_measurement_second = now
-                    print('{0} fps'.format(self.actual_frame_rate))
+        # Mesure du framerate
+        now = time.time()
+        self.current_frame_rate_measurement += 1
+        if now - self.current_frame_rate_measurement_second > 1.0:
+            self.actual_frame_rate = self.current_frame_rate_measurement
+            self.current_frame_rate_measurement = 0
+            self.current_frame_rate_measurement_second = now
+            # print(f'{self.actual_frame_rate} fps')  # optionnel
 
-                # Check if any delayed actions need to be applied
-                self.check_for_delayed_actions()
+        # Actions différées dans les modes actifs
+        self.check_for_delayed_actions()
 
-                after_draw_time = time.time()
+        after_draw_time = time.time()
+        # Calcul du temps restant pour approximer le framerate
+        sleep_time = (1.0 / self.target_frame_rate) - (after_draw_time - before_draw_time)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
-                # Calculate sleep time to aproximate the target frame rate
-                sleep_time = (1.0 / self.target_frame_rate) - (after_draw_time - before_draw_time)
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
 
-        except KeyboardInterrupt:
-            print('Exiting Pysha...')
-            self.push.f_stop.set()
 
     def on_midi_push_connection_established(self):
         # Do initial configuration of Push
@@ -539,6 +590,8 @@ class PyshaApp(object):
         # Update buttons and pads (just in case something was missing!)
         app.update_push2_buttons()
         app.update_push2_pads()
+
+
 
 
 # Bind push action handlers with class methods
@@ -643,20 +696,19 @@ midi_connected_received_before_app = False
 
 @push2_python.on_midi_connected()
 def on_midi_connected(_):
-    try:
+    if app:
         app.on_midi_push_connection_established()
-    except NameError as e:
-       global midi_connected_received_before_app
-       midi_connected_received_before_app = True
-       print('Error:  {}'.format(str(e)))
-       traceback.print_exc()
 
 
-# Run app main loop
+
 if __name__ == "__main__":
-    app = PyshaApp()
-    if midi_connected_received_before_app:
-        # App received the "on_midi_connected" call before it was initialized. Do it now!
-        print('Missed MIDI initialization call, doing it now...')
-        app.on_midi_push_connection_established()
-    app.run_loop()
+    qt_app = QApplication(sys.argv)
+
+    app = PyshaApp()  # ← toujours app, jamais pysha_app
+
+    # Timer pour la boucle Pysha
+    timer = QTimer()
+    timer.timeout.connect(app.run_loop_iteration)
+    timer.start(int(1000 / app.target_frame_rate))
+
+    qt_app.exec()
