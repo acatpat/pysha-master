@@ -3,6 +3,7 @@ import os
 import json
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton, QHBoxLayout
 from PyQt6.QtCore import pyqtSignal, Qt
+import mido
 
 import definitions
 
@@ -26,7 +27,21 @@ class SynthWindow(QWidget):
         self._instruments = []  # liste de short names (strings)
         self._selected_instrument = None
 
+        # ports MIDI associés aux instruments
+        self.instrument_midi_ports = {}  # { "DDRM": {"in": "...", "out": "..."} }
+
+        # construit l’UI (combo instrument)
         self._build_ui()
+
+        # remplir les combos MIDI IN/OUT (créés dans _build_ui)
+        self.combo_in.addItems(mido.get_input_names())
+        self.combo_out.addItems(mido.get_output_names())
+
+        # connecter signaux
+        self.combo_in.currentIndexChanged.connect(self.on_midi_in_changed)
+        self.combo_out.currentIndexChanged.connect(self.on_midi_out_changed)
+
+        # remplir la liste d’instruments JSON
         self.refresh_instrument_list()
 
     # --------------------
@@ -39,6 +54,18 @@ class SynthWindow(QWidget):
         header = QLabel("Instrument definitions")
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header)
+
+        # ---- AJOUT DES COMBOS MIDI IN/OUT ----
+        midi_row = QHBoxLayout()
+        layout.addLayout(midi_row)
+
+        self.combo_in = QComboBox()
+        self.combo_out = QComboBox()
+        midi_row.addWidget(QLabel("MIDI IN"))
+        midi_row.addWidget(self.combo_in)
+        midi_row.addWidget(QLabel("MIDI OUT"))
+        midi_row.addWidget(self.combo_out)
+        # --------------------------------------
 
         row = QHBoxLayout()
         layout.addLayout(row)
@@ -68,18 +95,15 @@ class SynthWindow(QWidget):
                     short = fn[:-5]  # enlever .json
                     instruments.append(short)
 
-        # garder l'ordre stable — mettre à jour combo seulement si changé
         self._instruments = instruments
         self.combo.blockSignals(True)
         self.combo.clear()
         self.combo.addItems(self._instruments)
         self.combo.blockSignals(False)
 
-        # garder sélection si possible
         if self._selected_instrument in self._instruments:
             self.set_selected_instrument(self._selected_instrument)
         elif self._instruments:
-            # par défaut, ne pas forcer la sélection — mais afficher premier si rien choisi
             self.combo.setCurrentIndex(0)
             self._on_combo_changed(self.combo.currentText())
 
@@ -91,18 +115,29 @@ class SynthWindow(QWidget):
             return
         self._selected_instrument = text
         self.current_label.setText(f"Current: {text}")
-        # émettre signal (autres composants s'abonnent)
+
+        # charger les ports MIDI si connus
+        if text in self.instrument_midi_ports:
+            current_in = self.instrument_midi_ports[text].get("in", "")
+            current_out = self.instrument_midi_ports[text].get("out", "")
+
+            idx_in = self.combo_in.findText(current_in)
+            if idx_in != -1:
+                self.combo_in.setCurrentIndex(idx_in)
+
+            idx_out = self.combo_out.findText(current_out)
+            if idx_out != -1:
+                self.combo_out.setCurrentIndex(idx_out)
+
         try:
             self.instrument_changed.emit(text)
         except Exception:
             pass
 
     def set_selected_instrument(self, short_name):
-        """Appelé depuis l'extérieur pour synchroniser la fenêtre (push ou code)."""
         if short_name is None:
             return
         if short_name not in self._instruments:
-            # essayer de raffraîchir la liste
             self.refresh_instrument_list()
         if short_name in self._instruments:
             idx = self._instruments.index(short_name)
@@ -111,29 +146,44 @@ class SynthWindow(QWidget):
             self.combo.blockSignals(False)
             self._on_combo_changed(short_name)
         else:
-            # afficher sans sélectionner si inconnu
             self.current_label.setText(f"Current: {short_name} (missing)")
 
     def get_instrument_list(self):
         return list(self._instruments)
 
     # --------------------
-    # Méthode utilitaire pour être appelée par le handler push lower-row
+    # Pour Push lower-row
     # --------------------
     def handle_lower_row_button(self, index):
-        """
-        index: 0..N-1 correspondant à la position du bouton dans la lower row.
-        On mappe index -> instrument short_name si possible, sinon on ignore.
-        """
         if index < 0 or index >= len(self._instruments):
             return None
         chosen = self._instruments[index]
         self.set_selected_instrument(chosen)
         return chosen
 
+    # --------------------
+    # Ports MIDI par instrument
+    # --------------------
+    def on_midi_in_changed(self, index):
+        short_name = self.combo.currentText()
+        port = self.combo_in.currentText()
+
+        if short_name not in self.instrument_midi_ports:
+            self.instrument_midi_ports[short_name] = {"in": "", "out": ""}
+
+        self.instrument_midi_ports[short_name]["in"] = port
+
+    def on_midi_out_changed(self, index):
+        short_name = self.combo.currentText()
+        port = self.combo_out.currentText()
+
+        if short_name not in self.instrument_midi_ports:
+            self.instrument_midi_ports[short_name] = {"in": "", "out": ""}
+
+        self.instrument_midi_ports[short_name]["out"] = port
+
     def set_current_instrument(self, short_name):
-        idx = self.combo.findText(short_name)
-        if idx != -1:
-            block = self.combo.blockSignals(True)
-            self.combo.setCurrentIndex(idx)
-            self.combo.blockSignals(block)
+        """
+        Méthode requise par app.py : redirige simplement vers set_selected_instrument.
+        """
+        self.set_selected_instrument(short_name)
