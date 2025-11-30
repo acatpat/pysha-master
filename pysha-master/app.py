@@ -505,6 +505,8 @@ class PyshaApp(object):
         for mode in self.active_modes:
             mode.update_buttons()
 
+
+
     def update_push2_display(self):
         if self.use_push2_display:
             # Prepare cairo canvas
@@ -615,10 +617,19 @@ class PyshaApp(object):
 @push2_python.on_encoder_rotated()
 def on_encoder_rotated(_, encoder_name, increment):
     try:
+        # Gestion spécifique du Tempo Encoder
+        if encoder_name == "Tempo Encoder" and app and hasattr(app, 'sequencer_window'):
+            sw = app.sequencer_window
+            old_tempo = sw.tempo_bpm
+            new_tempo = max(40, min(240, old_tempo + increment))  # clamp 40-240 BPM
+            sw.tempo_dial.setValue(new_tempo)  # met à jour le dial + label et déclenche set_tempo
+            return  # stop propagation, tempo déjà géré
+
+        # Propagation aux autres modes
         for mode in app.active_modes[::-1]:
             action_performed = mode.on_encoder_rotated(encoder_name, increment)
             if action_performed:
-                break  # If mode took action, stop event propagation
+                break  # Stop event propagation si un mode a pris en charge
     except NameError as e:
        print('Error:  {}'.format(str(e)))
        traceback.print_exc()
