@@ -55,6 +55,9 @@ class SettingsMode(definitions.PyshaMode):
     def activate(self):
         self.current_page = 0
         self.update_buttons()
+        print(f"DEBUG: SettingsMode.activate() called, current_page={self.current_page}")
+
+
 
     def deactivate(self):
         self.set_all_upper_row_buttons_off()

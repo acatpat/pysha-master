@@ -29,6 +29,7 @@ from ddrm_tone_selector_mode import DDRMToneSelectorMode
 
 from controller.sequencer_controller import SequencerController
 from ui.sequencer_window import SequencerWindow
+from controller.sequencer_target import SequencerTarget
 from display_utils import show_notification
 import definitions
 
@@ -78,7 +79,7 @@ class PyshaApp(object):
         # --- Attributs requis par les méthodes de mode ---
         self.active_modes = []
         self.previously_active_mode_for_xor_group = {}
-        
+
         # --- Chargement des paramètres ---
         if os.path.exists('settings.json'):
             settings = json.load(open('settings.json'))
@@ -90,34 +91,38 @@ class PyshaApp(object):
         self.target_frame_rate = settings.get('target_frame_rate', 60)
         self.use_push2_display = settings.get('use_push2_display', True)
 
-        # Initialisation MIDI
-        #self.init_midi_in(device_name=settings.get('default_midi_in_device_name', None))
-        #self.init_midi_out(device_name=settings.get('default_midi_out_device_name', None))
-        #self.init_notes_midi_in(device_name=settings.get('default_notes_midi_in_device_name', None))
-
         # Initialisation Push2
         self.init_push()
 
         # --- Séquenceur interne ---
-        from controller.sequencer_controller import SequencerController
-        from ui.sequencer_window import SequencerWindow  # Assure-toi que ce chemin est correct
 
-        self.sequencer_window = SequencerWindow()  # UI
+        # 1️⃣ Créer le target
+        self.sequencer_target = SequencerTarget(
+            app=self,
+            num_pads=16,
+            steps_per_pad=32,
+            start_note=36,
+            bpm=120,
+            step_duration=0.1
+        )
+
+        # 2️⃣ Créer la fenêtre et passer le target
+        self.sequencer_window = SequencerWindow()
+        self.sequencer_window.sequencer_target = self.sequencer_target
         self.sequencer_window.show()
+
+        # 3️⃣ Créer le controller
         self.sequencer_controller = SequencerController(
             app=self,
             sequencer_model=self.sequencer_window.steps,
             sequencer_window=self.sequencer_window
         )
 
-
-        # Initialisation des modes
+        # --- Initialisation des modes ---
         self.init_modes(settings)
 
-        # Lier le séquenceur au mode rythmique
+        # Lier le controller de séquenceur à RhythmicMode
         self.rhyhtmic_mode.sequencer_controller = self.sequencer_controller
-
-            ###
 
     def init_modes(self, settings):
         self.main_controls_mode = MainControlsMode(self, settings=settings)
@@ -166,9 +171,14 @@ class PyshaApp(object):
             if rotation_finished:
                 self.active_modes = [mode for mode in self.active_modes if mode != self.settings_mode]
                 self.settings_mode.deactivate()
-            else:
-                self.active_modes.append(self.settings_mode)
-                self.settings_mode.activate()
+        else:
+            self.active_modes.append(self.settings_mode)
+            self.settings_mode.activate()
+
+            # Force mise à jour immédiate
+            self.buttons_need_update = True
+            self.pads_need_update = True
+            self.update_push2_display()
 
     def toggle_ddrm_tone_selector_mode(self):
         if self.is_mode_active(self.ddrm_tone_selector_mode):
@@ -536,33 +546,40 @@ class PyshaApp(object):
             self.update_push2_buttons()
             self.buttons_need_update = False
 
-    def run_loop_iteration(self):
+    def run_loop(self):
         """
-        Une seule itération de la boucle Pysha.
-        Appelée par le QTimer pour que Qt continue à traiter les événements.
+        Boucle principale de Pysha.
+        Appelée directement ou via QTimer pour Qt.
         """
-        before_draw_time = time.time()
+        try:
+            before_draw_time = time.time()
 
-        # Mise à jour de l'affichage Push
-        self.update_push2_display()
+            # Vérifier les actions retardées des modes actifs
+            # Cela inclut la mise à jour des pads, boutons et autres éléments nécessaires
+            self.check_for_delayed_actions()
 
-        # Mesure du framerate
-        now = time.time()
-        self.current_frame_rate_measurement += 1
-        if now - self.current_frame_rate_measurement_second > 1.0:
-            self.actual_frame_rate = self.current_frame_rate_measurement
-            self.current_frame_rate_measurement = 0
-            self.current_frame_rate_measurement_second = now
-            # print(f'{self.actual_frame_rate} fps')  # optionnel
+            # Redessiner l'affichage Push2 (y compris SettingsMode si actif)
+            self.update_push2_display()
 
-        # Actions différées dans les modes actifs
-        self.check_for_delayed_actions()
+            # Frame rate (optionnel)
+            now = time.time()
+            self.current_frame_rate_measurement += 1
+            if now - self.current_frame_rate_measurement_second > 1.0:
+                self.actual_frame_rate = self.current_frame_rate_measurement
+                self.current_frame_rate_measurement = 0
+                self.current_frame_rate_measurement_second = now
+                print(f'{self.actual_frame_rate} fps')
 
-        after_draw_time = time.time()
-        # Calcul du temps restant pour approximer le framerate
-        sleep_time = (1.0 / self.target_frame_rate) - (after_draw_time - before_draw_time)
-        if sleep_time > 0:
+            # Calcul du temps de sleep pour approximer la target_frame_rate
+            after_draw_time = time.time()
+            sleep_time = max(0, (1.0 / self.target_frame_rate) - (after_draw_time - before_draw_time))
             time.sleep(sleep_time)
+
+        except KeyboardInterrupt:
+            print('Exiting Pysha...')
+            self.push.f_stop.set()
+
+
 
 
 
@@ -708,7 +725,7 @@ if __name__ == "__main__":
 
     # Timer pour la boucle Pysha
     timer = QTimer()
-    timer.timeout.connect(app.run_loop_iteration)
+    timer.timeout.connect(app.run_loop)
     timer.start(int(1000 / app.target_frame_rate))
 
     qt_app.exec()

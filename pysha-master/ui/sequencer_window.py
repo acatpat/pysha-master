@@ -29,6 +29,10 @@ class SequencerWindow(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.advance_step)
 
+        # Dans __init__ ou via setter
+        self.sequencer_target = None  # sera assigné depuis l'extérieur
+
+
         self.build_ui()
 
     # -------------------------------------------------------------
@@ -176,8 +180,19 @@ class SequencerWindow(QWidget):
 
     def advance_step(self):
         self.highlight_step(self.current_step, False)
-        self.current_step = (self.current_step + 1) % 32
+        
+        # nombre de steps = longueur d'un pad
+        num_steps = len(self.steps[self.selected_pad])
+        self.current_step = (self.current_step + 1) % num_steps
+        
         self.highlight_step(self.current_step, True)
+
+        # Jouer les notes actives pour ce step
+        if self.sequencer_target:
+            for pad_index, pad_steps in enumerate(self.steps):
+                if pad_steps[self.current_step]:
+                    self.sequencer_target.play_step(pad_index, self.current_step)
+
 
     def highlight_step(self, step, on):
         b = self.step_buttons[step]
@@ -207,6 +222,10 @@ class SequencerWindow(QWidget):
         pad = self.selected_pad
         self.steps[pad][step_index] = not self.steps[pad][step_index]
         self.update_steps_display()
+
+        if self.sequencer_target:
+            self.sequencer_target.set_step_state(pad, step_index, self.steps[pad][step_index])
+
 
     def update_steps_display(self):
         pad = self.selected_pad

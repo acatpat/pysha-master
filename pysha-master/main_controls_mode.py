@@ -75,6 +75,7 @@ class MainControlsMode(definitions.PyshaMode):
             self.app.buttons_need_update = True
             return True
         elif button_name == SETTINGS_BUTTON:
+            print("DEBUG: Setup button pressed")
             self.app.toggle_and_rotate_settings_mode()
             self.app.buttons_need_update = True
             return True
