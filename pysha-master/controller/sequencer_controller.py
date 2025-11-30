@@ -141,6 +141,8 @@ class SequencerController:
     def _toggle_play(self):
         print("[SEQ CTRL] _toggle_play -> invoking toggle_play_slot in UI thread")
         QMetaObject.invokeMethod(self.window, "toggle_play_slot", Qt.ConnectionType.QueuedConnection)
+        self.update_push2_play_led()
+        self.update_push_feedback()
 
 
     # -------------------------------------------------------------------------
@@ -154,6 +156,9 @@ class SequencerController:
             Qt.ConnectionType.QueuedConnection,
             Q_ARG(int, int(steps_per_beat))
         )
+        self.update_push2_resolution_leds()
+        self.update_push_feedback()
+
     # -------------------------------------------------------------------------
     # FEEDBACK PUSH 2
     # -------------------------------------------------------------------------
@@ -177,6 +182,42 @@ class SequencerController:
                 pad_matrix[step_row][step_col] = definitions.NOTE_ON_COLOR
 
         self.app.push.pads.set_pads_color(pad_matrix)
+
+        # --- Feedback PLAY ---
+        play_color = definitions.GREEN if self.window.play_button.isChecked() else definitions.WHITE
+        self.app.push.buttons.set_button_color("Play", play_color)
+
+        # --- Feedback RESOLUTION ---
+        for name, steps in self.resolution_buttons.items():
+            color = definitions.GREEN if steps == self.window.steps_per_beat else definitions.YELLOW
+            self.app.push.buttons.set_button_color(name, color)
+
+
+    def update_push2_play_led(self):
+        """Feedback Play → Push2 (vert = actif, blanc = inactif)."""
+        if not self.push:
+            return
+
+        if self.window.play_button.isChecked():
+            self.push.buttons.set_button_color("Play", definitions.GREEN)
+        else:
+            self.push.buttons.set_button_color("Play", definitions.WHITE)
+
+    def update_push2_resolution_leds(self):
+        """Feedback résolution → Push2 (vert actif, jaune inactif)."""
+        if not self.push:
+            return
+
+        for btn_name, steps in {
+            "1/4": 1,
+            "1/8": 2,
+            "1/16": 4,
+            "1/32": 8
+        }.items():
+            if steps == self.window.steps_per_beat:
+                self.push.buttons.set_button_color(btn_name, definitions.GREEN)
+            else:
+                self.push.buttons.set_button_color(btn_name, definitions.YELLOW)
 
     # -------------------------------------------------------------------------
     # ACTIONS GLOBALES
