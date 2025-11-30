@@ -29,6 +29,8 @@ class SequencerController:
 
         # Initialisation pads/steps
         self._init_default_mapping()
+        self.window.timer.timeout.connect(self.update_push_feedback)
+
 
     # -------------------------------------------------------------------------
     # INITIALISATION DU MAPPING
@@ -174,13 +176,20 @@ class SequencerController:
         row, col = self.pad_to_push2[selected_pitch]
         pad_matrix[row][col] = definitions.NOTE_ON_COLOR
 
-        # --- Steps ---
+        # --- Steps actifs ---
         steps = self.window.steps[selected_pad_idx]
         for step_index, step_on in enumerate(steps):
             if step_index in self.step_to_push2 and step_on:
                 step_row, step_col = self.step_to_push2[step_index]
                 pad_matrix[step_row][step_col] = definitions.NOTE_ON_COLOR
 
+        # --- Highlight du step courant (BLANC) ---
+        current_step = self.window.current_step
+        if current_step in self.step_to_push2:
+            row, col = self.step_to_push2[current_step]
+            pad_matrix[row][col] = definitions.WHITE
+
+        # --- ENVOI DES COULEURS (doit venir APRÈS TOUS LES CALCULS) ---
         self.app.push.pads.set_pads_color(pad_matrix)
 
         # --- Feedback PLAY ---
@@ -191,6 +200,8 @@ class SequencerController:
         for name, steps in self.resolution_buttons.items():
             color = definitions.GREEN if steps == self.window.steps_per_beat else definitions.YELLOW
             self.app.push.buttons.set_button_color(name, color)
+
+
 
 
     def update_push2_play_led(self):
