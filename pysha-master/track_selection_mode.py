@@ -38,11 +38,14 @@ class TrackSelectionMode(definitions.PyshaMode):
     track_selection_quick_press_time = 0.400
     pyramidi_channel = 15
 
+    on_track_selected_cb = None
+
     def initialize(self, settings=None):
         if settings is not None:
             self.pyramidi_channel = settings.get('pyramidi_channel', self.pyramidi_channel)
         
         self.create_tracks()
+
 
     def create_tracks(self):
         """This method creates 64 tracks corresponding to the Pyramid tracks that I use in my live setup.
@@ -152,6 +155,15 @@ class TrackSelectionMode(definitions.PyshaMode):
         self.send_select_track_to_pyramid(self.selected_track)
         self.load_current_default_layout()
         self.clean_currently_notes_being_played()
+
+        # NOTIFY UI (minimal, non-destructive) : appeler callback si défini
+        try:
+            if self.on_track_selected_cb:
+                self.on_track_selected_cb(self.get_current_track_instrument_short_name())
+        except Exception:
+            # garder robustesse si le callback plante
+            pass
+
         try:
             self.app.midi_cc_mode.new_track_selected()
             self.app.preset_selection_mode.new_track_selected()
@@ -159,6 +171,7 @@ class TrackSelectionMode(definitions.PyshaMode):
         except AttributeError:
             # Might fail if MIDICCMode/PresetSelectionMode/PyramidTrackTriggeringMode not initialized
             pass
+
         
     def activate(self):
         self.update_buttons()

@@ -29,6 +29,7 @@ from ddrm_tone_selector_mode import DDRMToneSelectorMode
 
 from controller.sequencer_controller import SequencerController
 from ui.sequencer_window import SequencerWindow
+from ui.synth_window import SynthWindow
 from controller.sequencer_target import SequencerTarget
 from display_utils import show_notification
 import definitions
@@ -111,6 +112,28 @@ class PyshaApp(object):
         self.sequencer_window.sequencer_target = self.sequencer_target
         self.sequencer_window.show()
 
+        # Créer la fenêtre synth (ne l'affiche pas forcément au démarrage)
+        self.synth_window = SynthWindow(app=self)
+        # Optionnel : affichage
+        self.synth_window.show()
+
+        # Connexion : quand l'utilisateur change via combo → on stocke la sélection et notifie
+        def _on_synth_window_selection(name):
+            # Stocke la sélection centrale dans app
+            self.current_instrument_definition = name
+
+            # Notifier d'autres composants (ex : MIDI CC mode, affichage, push)
+            # Exemple minimal : forcer update des boutons/pads
+            self.buttons_need_update = True
+            self.pads_need_update = True
+
+            # Si tu veux que d'autres modules réagissent, here call them:
+            # self.track_selection_mode.set_current_instrument_definition(name)  # si tu as une méthode
+            # self.midi_cc_mode.new_track_selected()  # rafraichir CCs si nécessaire
+
+        self.synth_window.instrument_changed.connect(_on_synth_window_selection)
+
+
         # 3️⃣ Créer le controller
         self.sequencer_controller = SequencerController(
             app=self,
@@ -144,6 +167,13 @@ class PyshaApp(object):
         self.ddrm_tone_selector_mode = DDRMToneSelectorMode(self, settings=settings)
 
         self.settings_mode = SettingsMode(self, settings=settings)
+
+        # connexion simple (non-Qt) :
+        self.track_selection_mode.on_track_selected_cb = lambda short_name: self.synth_window.set_current_instrument(short_name)
+
+        # ou méthode nommée :
+        self.track_selection_mode.on_track_selected_cb = self.synth_window.set_current_instrument
+
 
     from controller.sequencer_controller import SequencerController
     from ui.sequencer_window import SequencerWindow
