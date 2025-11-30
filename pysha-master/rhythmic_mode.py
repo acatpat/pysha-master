@@ -37,11 +37,15 @@ class RhythmicMode(MelodicMode):
 
 
     def on_button_pressed(self, button_name):
-        if button_name == push2_python.constants.BUTTON_OCTAVE_UP or button_name == push2_python.constants.BUTTON_OCTAVE_DOWN:
-            # Don't react to octave up/down buttons as these are not used in rhythm mode
-            pass
+        # Ignorer octave up/down
+        if button_name in (push2_python.constants.BUTTON_OCTAVE_UP, push2_python.constants.BUTTON_OCTAVE_DOWN):
+            return
+
+        # Boutons Play / Résolution gérés ici
+        elif button_name in ("Play", "1/4", "1/8", "1/16", "1/32"):
+            self.app.sequencer_controller.handle_push2_button(button_name)
         else:
-            # For the other buttons, refer to the base class
+            # Les autres boutons sont traités par la classe parente
             super().on_button_pressed(button_name)
 
     def on_pad_pressed(self, pad_n, pad_ij, velocity):

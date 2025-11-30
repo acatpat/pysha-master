@@ -3,7 +3,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLabel, QDial
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 
 
 class SequencerWindow(QWidget):
@@ -126,7 +126,20 @@ class SequencerWindow(QWidget):
     # -------------------------------------------------------------
     # Lecture du séquenceur
     # -------------------------------------------------------------
+    @pyqtSlot()
+    def toggle_play_slot(self):
+        print("[SEQ UI] toggle_play_slot called (thread-safe)")
+
+        # ⬅️ CORRECTION : inversion propre de l'état du bouton
+        current = self.play_button.isChecked()
+        self.play_button.setChecked(not current)
+
+        # maintenant toggle_play agit correctement
+        self.toggle_play()
+
+
     def toggle_play(self):
+        print(f"[SEQ UI] toggle_play called; isChecked={self.play_button.isChecked()}")
         if self.play_button.isChecked():
             self.play_button.setText("Stop")
             interval = int(60000 / self.tempo_bpm / self.steps_per_beat)
@@ -143,7 +156,13 @@ class SequencerWindow(QWidget):
             interval = int(60000 / bpm / self.steps_per_beat)
             self.timer.start(interval)
 
+    @pyqtSlot(int)
+    def set_resolution_slot(self, steps_per_beat):
+        print(f"[SEQ UI] set_resolution_slot called with {steps_per_beat}")
+        self.set_resolution(steps_per_beat)
+
     def set_resolution(self, steps_per_beat):
+        print(f"[SEQ UI] set_resolution: {steps_per_beat}")
         self.steps_per_beat = steps_per_beat
 
         # Mise à jour visuelle des boutons
@@ -153,6 +172,7 @@ class SequencerWindow(QWidget):
         if self.timer.isActive():
             interval = int(60000 / self.tempo_bpm / self.steps_per_beat)
             self.timer.start(interval)
+
 
     def advance_step(self):
         self.highlight_step(self.current_step, False)
