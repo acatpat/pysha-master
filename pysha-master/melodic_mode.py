@@ -253,7 +253,14 @@ class MelodicMode(definitions.PyshaMode):
                 # notes info comming from any other source
                 self.add_note_being_played(midi_note, 'push')
             msg = mido.Message('note_on', note=midi_note, velocity=velocity if not self.fixed_velocity_mode else 127)
-            self.app.send_midi(msg)
+            selected_instrument = self.app.synth_window._selected_instrument
+            midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
+            if midi_out_port is not None:
+                midi_out_port.send(msg)
+            else:
+                # fallback sur le port global
+                self.app.send_midi(msg)
+
             self.update_pads()  # Directly calling update pads method because we want user to feel feedback as quick as possible
             return True
 
@@ -264,7 +271,14 @@ class MelodicMode(definitions.PyshaMode):
                 # see comment in "on_pad_pressed" above
                 self.remove_note_being_played(midi_note, 'push')
             msg = mido.Message('note_off', note=midi_note, velocity=velocity)
-            self.app.send_midi(msg)
+            selected_instrument = self.app.synth_window._selected_instrument
+            midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
+            if midi_out_port is not None:
+                midi_out_port.send(msg)
+            else:
+                # fallback sur le port global
+                self.app.send_midi(msg)
+
             self.update_pads()  # Directly calling update pads method because we want user to feel feedback as quick as possible
             return True
 
@@ -279,7 +293,14 @@ class MelodicMode(definitions.PyshaMode):
             # channel AT mode
             self.latest_channel_at_value = (time.time(), velocity)
             msg = mido.Message('aftertouch', value=velocity)
-        self.app.send_midi(msg)
+        selected_instrument = self.app.synth_window._selected_instrument
+        midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
+        if midi_out_port is not None:
+            midi_out_port.send(msg)
+        else:
+            # fallback sur le port global
+            self.app.send_midi(msg)
+
         return True
 
     def on_touchstrip(self, value):
@@ -287,12 +308,26 @@ class MelodicMode(definitions.PyshaMode):
             msg = mido.Message('control_change', control=1, value=value)
         else:
             msg = mido.Message('pitchwheel', pitch=value)
-        self.app.send_midi(msg)
+        selected_instrument = self.app.synth_window._selected_instrument
+        midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
+        if midi_out_port is not None:
+            midi_out_port.send(msg)
+        else:
+            # fallback sur le port global
+            self.app.send_midi(msg)
+
         return True
 
     def on_sustain_pedal(self, sustain_on):
         msg = mido.Message('control_change', control=64, value=127 if sustain_on else 0)
-        self.app.send_midi(msg)
+        selected_instrument = self.app.synth_window._selected_instrument
+        midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
+        if midi_out_port is not None:
+            midi_out_port.send(msg)
+        else:
+            # fallback sur le port global
+            self.app.send_midi(msg)
+
         return True
 
     def on_button_pressed(self, button_name):

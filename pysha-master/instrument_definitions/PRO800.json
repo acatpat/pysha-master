@@ -10,43 +10,43 @@
             "controls": [
                 [
                     "VCO1 LEV",
-                    15
+                    9
                 ],
                 [
                     "VCO2 LEV",
+                    12
+                ],
+                [
+                    "VCO1 PULSE",
+                    10
+                ],
+                [
+                    "VCO2 PULSE",
                     16
                 ],
                 [
-                    "VCO1 WAVE",
-                    70
-                ],
-                [
-                    "VCO2 WAVE",
-                    71
-                ],
-                [
                     "GLIDE RATE",
-                    5
-                ],
-                [
-                    "LEG GLIDE",
-                    83
+                    30
                 ],
                 [
                     "GLIDE TYPE",
-                    92
+                    79
                 ],
                 [
-                    "GLIDE SWITCH",
-                    65
+                    "NOISE",
+                    37
+                ],
+                [
+                    "VCO1FREQ",
+                    8
                 ],
                 [
                     "VCO2FREQ",
-                    17
+                    11
                 ],
                 [
-                    "VCO2BEAT",
-                    18
+                    "VCO2FINE",
+                    14
                 ]
             ]
         },
@@ -55,31 +55,31 @@
             "controls": [
                 [
                     "CUTOFF",
-                    19
+                    15
                 ],
                 [
                     "RESSO",
-                    21
+                    16
                 ],
                 [
-                    "KB TRACK",
-                    20
-                ],
-                [
-                    "EG AMT",
-                    22
+                    "ENV AMT",
+                    17
                 ],
                 [
                     "ATTACK",
-                    23
+                    21
                 ],
                 [
-                    "DEC/REL",
-                    24
+                    "DECAY",
+                    20
                 ],
                 [
                     "SUSTAIN",
-                    25
+                    19
+                ],
+                [
+                    "RELEASE",
+                    18
                 ]
             ]
         },
@@ -92,15 +92,19 @@
                 ],
                 [
                     "ATTACK",
-                    28
+                    25
                 ],
                 [
-                    "DEC/REL",
-                    29
+                    "DECAY",
+                    24
                 ],
                 [
                     "SUSTAIN",
-                    30
+                    23
+                ],
+                [
+                    "RELEASE",
+                    22
                 ]
             ]
         },
@@ -109,19 +113,19 @@
             "controls": [
                 [
                     "RATE",
-                    3
+                    28
                 ],
                 [
-                    "VCO AMT",
-                    13
+                    "INIT AMT",
+                    29
                 ],
                 [
-                    "VCF AMT",
-                    12
+                    "SHAPE",
+                    57
                 ],
                 [
-                    "CLOCK DIV",
-                    86
+                    "TARGET",
+                    59
                 ]
             ]
         },
@@ -129,23 +133,23 @@
             "section": "OTHER",
             "controls": [
                 [
-                    "FILT VEL",
-                    89
+                    "VCA AFT",
+                    39
                 ],
                 [
-                    "VOL VEL",
-                    90
+                    "VCF AFT",
+                    40
                 ],
                 [
-                    "EXT IN",
-                    27
+                    "LFO AFT",
+                    41
                 ],
                 [
-                    "REL SWITCH",
+                    "VCF speed",
                     72
                 ],
                 [
-                    "TRIG MODE",
+                    "VCF exp",
                     73
                 ],
                 [

@@ -4,13 +4,16 @@ import sys
 import json
 import os
 import platform
-import time
 import traceback
 
 import cairo
 import numpy
 import mido
+print(mido.backend)
+mido.set_backend('mido.backends.rtmidi')
 import push2_python
+import threading
+import time
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
@@ -109,6 +112,8 @@ class PyshaApp(object):
 
         # 2️⃣ Créer la fenêtre et passer le target
         self.sequencer_window = SequencerWindow()
+        self.sequencer_window.app = self
+
         self.sequencer_window.sequencer_target = self.sequencer_target
         self.sequencer_window.show()
 
@@ -150,6 +155,10 @@ class PyshaApp(object):
         # Lier le controller de séquenceur à RhythmicMode
         self.rhyhtmic_mode.sequencer_controller = self.sequencer_controller
 
+        self._clock_running = False
+        self._midi_clock_thread = threading.Thread(target=self._clock_loop, daemon=True)
+        self._midi_clock_thread.start()
+
     def init_modes(self, settings):
         self.main_controls_mode = MainControlsMode(self, settings=settings)
         self.active_modes.append(self.main_controls_mode)
@@ -190,6 +199,103 @@ class PyshaApp(object):
         )
 
         self.sequencer_window.show()  # affiche la fenêtre
+
+    # --------------------------
+    # MIDI Clock global
+    # --------------------------
+    def start_midi_clock(self):
+        """
+        Thread global qui envoie le MIDI Clock aux synthés.
+        Start/Stop contrôlable via self._clock_running.
+        Drift minimal grâce à time.perf_counter.
+        """
+
+
+        self._clock_running = False  # Flag pour contrôler l’envoi
+        self._midi_clock_thread = threading.Thread(target=self._clock_loop, daemon=True)
+        self._midi_clock_thread.start()
+
+
+    def _clock_loop(self):
+        last_time = time.perf_counter()
+        pulse_count = 0
+
+
+        while True:
+            if getattr(self, "_clock_running", False):
+                bpm = float(getattr(self.sequencer_window, 'tempo_bpm', 120))
+                interval = 60 / (bpm * 24)  # 24 pulses par beat
+                now = time.perf_counter()
+                elapsed = now - last_time
+                if elapsed >= interval:
+                    # envoyer un pulse
+                    for track in self.track_selection_mode.tracks_info:
+                        instr_name = track['instrument_short_name']
+                        midi_port = self.synth_window.instrument_midi_ports.get(instr_name, {}).get("out", None)
+                        if midi_port:
+                            try:
+                                midi_port.send(mido.Message('clock'))
+                                # --- synchronisation unique du sequencer sur l’horloge MIDI ---
+                                if pulse_count % 24 == 0:  # un beat complet
+                                    try:
+                                        self.sequencer_controller.tick_from_clock_thread()
+                                    except Exception:
+                                        pass
+                                # --- fin ajout ---
+
+                            except Exception:
+                                pass
+                    last_time += interval
+                    pulse_count += 1
+            else:
+                last_time = time.perf_counter()  # reset temps si stop
+
+            time.sleep(0.001)  # sleep court pour ne pas bloquer CPU
+
+    def start_clock(self):
+        """Active le clock et envoie Start à tous les synthés."""
+        self._clock_running = True
+        self.send_start_to_all_instruments()
+
+    def stop_clock(self):
+        """Désactive le clock et envoie Stop à tous les synthés."""
+        self._clock_running = False
+        self.send_stop_to_all_instruments()
+
+    def continue_clock(self):
+        """Reprend l’envoi du clock (Continue)"""
+        self._clock_running = True
+        self.send_continue_to_all_instruments()            
+
+    def send_start_to_all_instruments(self):
+        """Envoie un message MIDI Start à tous les synthés ouverts."""
+        for track in self.track_selection_mode.tracks_info:
+            midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
+            if midi_port:
+                try:
+                    midi_port.send(mido.Message('start'))
+                except Exception:
+                    pass
+
+    def send_stop_to_all_instruments(self):
+        """Envoie un message MIDI Stop à tous les synthés ouverts."""
+        for track in self.track_selection_mode.tracks_info:
+            midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
+            if midi_port:
+                try:
+                    midi_port.send(mido.Message('stop'))
+                except Exception:
+                    pass
+
+    def send_continue_to_all_instruments(self):
+        """Envoie un message MIDI Continue à tous les synthés ouverts."""
+        for track in self.track_selection_mode.tracks_info:
+            midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
+            if midi_port:
+                try:
+                    midi_port.send(mido.Message('continue'))
+                except Exception:
+                    pass
 
 
     def get_all_modes(self):

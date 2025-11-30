@@ -212,6 +212,14 @@ class SequencerController:
             color = definitions.GREEN if steps == self.window.steps_per_beat else definitions.YELLOW
             self.app.push.buttons.set_button_color(btn_name, color)
 
+    def tick_from_clock_thread(self):
+        # avance interne
+        self.advance_step()
+
+        # mise à jour UI liée au séquenceur
+        if self.sequencer_window:
+            self.sequencer_window.update_display_from_sequencer()
+
 
 
 

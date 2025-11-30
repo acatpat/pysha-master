@@ -143,15 +143,16 @@ class SequencerWindow(QWidget):
 
 
     def toggle_play(self):
-        print(f"[SEQ UI] toggle_play called; isChecked={self.play_button.isChecked()}")
         if self.play_button.isChecked():
             self.play_button.setText("Stop")
             interval = int(60000 / self.tempo_bpm / self.steps_per_beat)
             self.timer.start(interval)
+            self.app.start_clock()  # start Clock global
         else:
             self.play_button.setText("Play")
             self.timer.stop()
             self.reset_step_highlight()
+            self.app.stop_clock()   # stop Clock global
 
     def set_tempo(self, bpm):
         self.tempo_bpm = bpm
