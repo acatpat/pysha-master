@@ -2,30 +2,24 @@
 
 import definitions
 
-
 class SequencerController:
     """
-    Interprète les notes envoyées par RhythmicMode pour contrôler le séquenceur interne.
-    Convertit le pitch (0-127) en actions logiques :
-    - Sélection de pad
-    - Toggle de step dans la grille
-    - Navigation / pages
-    - Actions globales
+    Contrôle le séquenceur interne et envoie le feedback sur Push 2.
     """
 
     def __init__(self, app, sequencer_model, sequencer_window):
         self.app = app
-        self.model = sequencer_model      # ton modèle : steps, resolution, patterns
-        self.window = sequencer_window    # ton UI du séquenceur
+        self.model = sequencer_model
+        self.window = sequencer_window
 
-        self.selected_pad = None          # ex: "kick", "snare", etc.
-        self.pad_map = {}                 # pitch → instrument
-        self.step_range_start = None      # pitch minimal des steps
-        self.step_range_end = None        # pitch max des steps
-        self.pad_to_push2 = {}     # pad_name → (row, col) sur Push 2
-        self.step_to_push2 = {}    # step_index → (row, col) sur Push 2
+        # Initialisations des attributs
+        self.pad_map = {}               # pitch → pad_name
+        self.step_range_start = None
+        self.step_range_end = None
+        self.pad_to_push2 = {}          # pitch MIDI → (row, col) sur Push 2
+        self.step_to_push2 = {}         # step_index → (row, col) sur Push 2
+        self.step_pitch_to_index = {}   # pitch MIDI → step_index
 
-        # Tu définis ces mappings plus tard selon ta matrice rythmique
         self._init_default_mapping()
 
     # -------------------------------------------------------------------------
@@ -41,116 +35,107 @@ class SequencerController:
             37: "snare",
             38: "closed_hh",
             39: "open_hh",
+            40: "pad5",
+            41: "pad6",
+            42: "pad7",
+            43: "pad8",
+            44: "pad9",
+            45: "pad10",
+            46: "pad11",
+            47: "pad12",
+            48: "pad13",
+            49: "pad14",
+            50: "pad15",
+            51: "pad16",
         }
 
         # Steps
-        self.step_range_start = 64
-        self.step_range_end = 64 + 15  # 16 steps : 64 → 79
+        step_rows = [
+            [64, 65, 66, 67, 96, 97, 98, 99],
+            [60, 61, 62, 63, 92, 93, 94, 95],
+            [56, 57, 58, 59, 88, 89, 90, 91],
+            [52, 53, 54, 55, 84, 85, 86, 87]
+        ]
+        self.step_range_start = min(min(row) for row in step_rows)
+        self.step_range_end = max(max(row) for row in step_rows)
 
-        # Mapping pad_name → (row, col) Push 2
-        # Exemple : pads sur la rangée 4
-        self.pad_to_push2 = {
-            "kick": (4, 0),
-            "snare": (4, 1),
-            "closed_hh": (4, 2),
-            "open_hh": (4, 3),
-        }
+        # Mapping step_index → position Push 2 (row, col) et pitch → step_index
+        for row_idx, row_notes in enumerate(step_rows):
+            for col_idx, pitch in enumerate(row_notes):
+                step_index = row_idx * 8 + col_idx
+                self.step_to_push2[step_index] = (row_idx, col_idx)
+                self.step_pitch_to_index[pitch] = step_index
 
-        # Mapping step_index → (row, col) Push 2
-        # 16 steps répartis sur 2 lignes
-        for i in range(16):
-            if i < 8:
-                self.step_to_push2[i] = (5, i)       # rangée 5, colonnes 0-7
-            else:
-                self.step_to_push2[i] = (6, i - 8)  # rangée 6, colonnes 0-7
-
+        # Mapping pad MIDI → position Push 2 (row, col)
+        pad_midi_notes = list(range(36, 52))  # 16 pads
+        for idx, pitch in enumerate(pad_midi_notes):
+            row = 4 + (idx // 8)   # rangée 4 et 5
+            col = idx % 8
+            self.pad_to_push2[pitch] = (row, col)
 
     # -------------------------------------------------------------------------
     # FONCTION PRINCIPALE
     # -------------------------------------------------------------------------
     def handle_rhythmic_input(self, pitch, is_note_on=True):
-        """
-        Fonction appelée depuis RhythmicMode à chaque pad / note envoyé.
-        """
-        # 1. Ignore si ce n'est pas un note_on
         if not is_note_on:
             return
 
-        # 2. D'abord : instrument selection
+        # 1. Sélection pad
         if pitch in self.pad_map:
             return self._select_pad(self.pad_map[pitch])
 
-        # 3. Ensuite : gestion des steps
-        if self.step_range_start <= pitch <= self.step_range_end:
-            step_index = pitch - self.step_range_start
+        # 2. Toggle step
+        if pitch in self.step_pitch_to_index:
+            step_index = self.step_pitch_to_index[pitch]
             return self._toggle_step(step_index)
 
-        # 4. Sinon : peut être une fonction globale (shift, mute…)
+        # 3. Actions globales
         return self._global_action(pitch)
 
     # -------------------------------------------------------------------------
     # SÉLECTION DE PAD
     # -------------------------------------------------------------------------
     def _select_pad(self, pad_name):
-        if pad_name not in self.pad_to_push2:
-            print(f"[SEQ] Pad inconnu : {pad_name}")
-            return
+        # Pitch MIDI du pad
+        pitch = [p for p, name in self.pad_map.items() if name == pad_name][0]
+        # Index dans window.selected_pad
+        self.window.selected_pad = list(self.pad_map.keys()).index(pitch)
 
-        # Trouver l’index correspondant pour window.selected_pad
-        idx = list(self.pad_map.values()).index(pad_name)
-        self.window.selected_pad = idx
-        print(f"[SEQ] Pad sélectionné : {pad_name} (index {idx})")
-
-        # UI
-        self.window.update_pad_display()
-        self.window.update_steps_display()
-
-        # Feedback Push
+        # Feedback Push 2
         self.update_push_feedback()
 
     # -------------------------------------------------------------------------
     # TOGGLE D’UN STEP
     # -------------------------------------------------------------------------
     def _toggle_step(self, step_index):
-        pad = self.window.selected_pad
-        if pad is None:
-            print("[SEQ] Aucun pad sélectionné → ignore l’appui.")
-            return
-
-        print(f"[SEQ] Toggle step {step_index} pour pad {pad}")
-
-        # Basculer le step
+        pad_idx = self.window.selected_pad
         self.window.toggle_step(step_index)
 
-        # Mise à jour visuelle
-        self.window.update_steps_display()
-
-        # Feedback Push
+        # Feedback Push 2
         self.update_push_feedback()
 
     # -------------------------------------------------------------------------
-    # FEEDBACK PUSH2
+    # FEEDBACK PUSH 2
     # -------------------------------------------------------------------------
     def update_push_feedback(self):
         if not self.app.push:
             return
 
-        # Préparer matrice 8x8 pour Push
+        # Matrice 8x8
         pad_matrix = [[definitions.BLACK for _ in range(8)] for _ in range(8)]
 
-        # --- Allumer pad sélectionné ---
+        # --- Allumer le pad sélectionné ---
         selected_pad_idx = self.window.selected_pad
-        selected_pad_name = list(self.pad_map.values())[selected_pad_idx]
-        if selected_pad_name in self.pad_to_push2:
-            row, col = self.pad_to_push2[selected_pad_name]
-            pad_matrix[row][col] = definitions.NOTE_ON_COLOR
+        selected_pitch = list(self.pad_map.keys())[selected_pad_idx]
+        row, col = self.pad_to_push2[selected_pitch]
+        pad_matrix[row][col] = definitions.NOTE_ON_COLOR
 
-        # --- Allumer steps ---
+        # --- Allumer les steps ---
         steps = self.window.steps[selected_pad_idx]
-        for step_idx, step_on in enumerate(steps):
-            if step_idx in self.step_to_push2:
-                row, col = self.step_to_push2[step_idx]
-                pad_matrix[row][col] = definitions.NOTE_ON_COLOR if step_on else definitions.BLACK
+        for step_index, step_on in enumerate(steps):
+            if step_index in self.step_to_push2 and step_on:
+                step_row, step_col = self.step_to_push2[step_index]
+                pad_matrix[step_row][step_col] = definitions.NOTE_ON_COLOR
 
         # Envoyer la matrice complète à Push 2
         self.app.push.pads.set_pads_color(pad_matrix)
@@ -159,11 +144,4 @@ class SequencerController:
     # ACTIONS GLOBALES
     # -------------------------------------------------------------------------
     def _global_action(self, pitch):
-        """
-        Ici tu mets des actions non-step, non-pad :
-        - changement de page
-        - Start/Stop
-        - Clear
-        - Duplicate
-        """
         print(f"[SEQ] Action globale non définie pour pitch {pitch}")
