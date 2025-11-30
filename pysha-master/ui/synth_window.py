@@ -175,12 +175,19 @@ class SynthWindow(QWidget):
 
     def on_midi_out_changed(self, index):
         short_name = self.combo.currentText()
-        port = self.combo_out.currentText()
+        port_name = self.combo_out.currentText()
 
         if short_name not in self.instrument_midi_ports:
-            self.instrument_midi_ports[short_name] = {"in": "", "out": ""}
+            self.instrument_midi_ports[short_name] = {"in": "", "out": None}
 
-        self.instrument_midi_ports[short_name]["out"] = port
+        try:
+            midi_out_port = mido.open_output(port_name)
+            self.instrument_midi_ports[short_name]["out"] = midi_out_port
+            print(f"Port MIDI OUT pour {short_name} ouvert : {port_name}")
+        except IOError:
+            self.instrument_midi_ports[short_name]["out"] = None
+            print(f"Impossible d’ouvrir le port MIDI {port_name} pour {short_name}")
+
 
     def set_current_instrument(self, short_name):
         """

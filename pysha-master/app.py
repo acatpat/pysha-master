@@ -117,6 +117,9 @@ class PyshaApp(object):
         # Optionnel : affichage
         self.synth_window.show()
 
+        # ⚡ Lien entre app et synth_window pour les ports MIDI
+        self.instrument_midi_ports = self.synth_window.instrument_midi_ports
+
         # Connexion : quand l'utilisateur change via combo → on stocke la sélection et notifie
         def _on_synth_window_selection(name):
             # Stocke la sélection centrale dans app
