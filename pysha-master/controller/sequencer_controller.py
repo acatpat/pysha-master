@@ -168,6 +168,11 @@ class SequencerController:
         if not self.app.push:
             return
 
+        # --- NE FAIRE LE FEEDBACK RHYTHMIC QUE SI LE MODE EST ACTIF ---
+        if not self.app.is_mode_active(self.app.rhyhtmic_mode):
+            # Si Rhythmic n'est pas actif, laisser les autres modes gérer leurs pads
+            return
+
         pad_matrix = [[definitions.BLACK for _ in range(8)] for _ in range(8)]
 
         # --- Pad sélectionné ---
@@ -189,46 +194,27 @@ class SequencerController:
             row, col = self.step_to_push2[current_step]
             pad_matrix[row][col] = definitions.WHITE
 
-        # --- ENVOI DES COULEURS (doit venir APRÈS TOUS LES CALCULS) ---
+        # --- ENVOI DES COULEURS ---
         self.app.push.pads.set_pads_color(pad_matrix)
 
-        # --- Feedback PLAY ---
+        # --- Feedback PLAY et RESOLUTION (toujours ok) ---
+        # Feedback Play
         play_color = definitions.GREEN if self.window.play_button.isChecked() else definitions.WHITE
         self.app.push.buttons.set_button_color("Play", play_color)
 
-        # --- Feedback RESOLUTION ---
-        for name, steps in self.resolution_buttons.items():
-            color = definitions.GREEN if steps == self.window.steps_per_beat else definitions.YELLOW
-            self.app.push.buttons.set_button_color(name, color)
-
-
-
-
-    def update_push2_play_led(self):
-        """Feedback Play → Push2 (vert = actif, blanc = inactif)."""
-        if not self.push:
-            return
-
-        if self.window.play_button.isChecked():
-            self.push.buttons.set_button_color("Play", definitions.GREEN)
-        else:
-            self.push.buttons.set_button_color("Play", definitions.WHITE)
-
-    def update_push2_resolution_leds(self):
-        """Feedback résolution → Push2 (vert actif, jaune inactif)."""
-        if not self.push:
-            return
-
+        # Feedback Résolution
         for btn_name, steps in {
             "1/4": 1,
             "1/8": 2,
             "1/16": 4,
             "1/32": 8
         }.items():
-            if steps == self.window.steps_per_beat:
-                self.push.buttons.set_button_color(btn_name, definitions.GREEN)
-            else:
-                self.push.buttons.set_button_color(btn_name, definitions.YELLOW)
+            color = definitions.GREEN if steps == self.window.steps_per_beat else definitions.YELLOW
+            self.app.push.buttons.set_button_color(btn_name, color)
+
+
+
+
 
     # -------------------------------------------------------------------------
     # ACTIONS GLOBALES

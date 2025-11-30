@@ -28,13 +28,23 @@ class RhythmicMode(MelodicMode):
         pass
 
     def activate(self):
-        super().activate()  # si tu as une logique d’activation de base
-        # Forcer le feedback Push 2 complet
-        self.app.sequencer_controller.update_push_feedback()
+        super().activate()
+        # Forcer l’update complet du feedback Push2
+        if hasattr(self.app, 'sequencer_controller'):
+            self.app.sequencer_controller.update_push_feedback()
+
+
+
 
     def update_pads(self):
+        # Ici on ne fait rien car SequencerController gère le feedback
         pass
 
+    def deactivate(self):
+        super().deactivate()
+        # Forcer update des pads à la sortie du mode
+        self.app.pads_need_update = True
+        self.app.buttons_need_update = True
 
     def on_button_pressed(self, button_name):
         # Ignorer octave up/down
