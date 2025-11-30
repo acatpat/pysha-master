@@ -5,6 +5,7 @@ import definitions
 class SequencerController:
     """
     Contrôle le séquenceur interne et envoie le feedback sur Push 2.
+    Pads et steps parfaitement alignés avec l’emplacement physique.
     """
 
     def __init__(self, app, sequencer_model, sequencer_window):
@@ -26,30 +27,23 @@ class SequencerController:
     # INITIALISATION DU MAPPING
     # -------------------------------------------------------------------------
     def _init_default_mapping(self):
-        """
-        Définition des pads et steps, et mapping vers Push 2.
-        """
-        # Pads (pitch → pad_name)
+        # Pads MIDI (pitch → pad_name)
         self.pad_map = {
-            36: "kick",
-            37: "snare",
-            38: "closed_hh",
-            39: "open_hh",
-            40: "pad5",
-            41: "pad6",
-            42: "pad7",
-            43: "pad8",
-            44: "pad9",
-            45: "pad10",
-            46: "pad11",
-            47: "pad12",
-            48: "pad13",
-            49: "pad14",
-            50: "pad15",
-            51: "pad16",
+            36: "kick", 37: "snare", 38: "closed_hh", 39: "open_hh",
+            40: "pad5", 41: "pad6", 42: "pad7", 43: "pad8",
+            44: "pad9", 45: "pad10", 46: "pad11", 47: "pad12",
+            48: "pad13", 49: "pad14", 50: "pad15", 51: "pad16"
         }
 
-        # Steps
+        # Mapping pads → positions Push 2 (row, col) exact pour feedback = emplacement physique
+        self.pad_to_push2 = {
+            36: (7,0), 37: (7,1), 38: (7,2), 39: (7,3),
+            40: (6,0), 41: (6,1), 42: (6,2), 43: (6,3),
+            44: (5,0), 45: (5,1), 46: (5,2), 47: (5,3),
+            48: (4,0), 49: (4,1), 50: (4,2), 51: (4,3)
+        }
+
+        # Steps (32 steps sur 4 lignes de 8)
         step_rows = [
             [64, 65, 66, 67, 96, 97, 98, 99],
             [60, 61, 62, 63, 92, 93, 94, 95],
@@ -65,13 +59,6 @@ class SequencerController:
                 step_index = row_idx * 8 + col_idx
                 self.step_to_push2[step_index] = (row_idx, col_idx)
                 self.step_pitch_to_index[pitch] = step_index
-
-        # Mapping pad MIDI → position Push 2 (row, col)
-        pad_midi_notes = list(range(36, 52))  # 16 pads
-        for idx, pitch in enumerate(pad_midi_notes):
-            row = 4 + (idx // 8)   # rangée 4 et 5
-            col = idx % 8
-            self.pad_to_push2[pitch] = (row, col)
 
     # -------------------------------------------------------------------------
     # FONCTION PRINCIPALE
@@ -100,6 +87,10 @@ class SequencerController:
         pitch = [p for p, name in self.pad_map.items() if name == pad_name][0]
         # Index dans window.selected_pad
         self.window.selected_pad = list(self.pad_map.keys()).index(pitch)
+
+        # Mettre à jour l’affichage des pads dans l’UI
+        self.window.update_pad_display()
+        self.window.update_steps_display()
 
         # Feedback Push 2
         self.update_push_feedback()
