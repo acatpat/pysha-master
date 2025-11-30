@@ -1,17 +1,16 @@
 import definitions
 import mido
 import push2_python
-import time
 import math
 import json
 import os
+import time
 
 from definitions import PyshaMode, OFF_BTN_COLOR
 from display_utils import show_text
 
 
 class MIDICCControl(object):
-
     color = definitions.GRAY_LIGHT
     color_rgb = None
     name = 'Unknown'
@@ -33,27 +32,21 @@ class MIDICCControl(object):
 
     def draw(self, ctx, x_part):
         margin_top = 25
-        
-        # Param name
         name_height = 20
         show_text(ctx, x_part, margin_top, self.name, height=name_height, font_color=definitions.WHITE)
 
-        # Param value
         val_height = 30
         color = self.get_color_func()
-        show_text(ctx, x_part, margin_top + name_height, self.value_labels_map.get(str(self.value), str(self.value)), height=val_height, font_color=color)
+        show_text(ctx, x_part, margin_top + name_height,
+                  self.value_labels_map.get(str(self.value), str(self.value)), height=val_height, font_color=color)
 
-        # Knob
         ctx.save()
-
         circle_break_degrees = 80
         height = 55
-        radius = height/2
-
+        radius = height / 2
         display_w = push2_python.constants.DISPLAY_LINE_PIXELS
         x = (display_w // 8) * x_part
         y = margin_top + name_height + val_height + radius + 5
-        
         start_rad = (90 + circle_break_degrees // 2) * (math.pi / 180)
         end_rad = (90 - circle_break_degrees // 2) * (math.pi / 180)
         xc = x + radius + 3
@@ -61,28 +54,22 @@ class MIDICCControl(object):
 
         def get_rad_for_value(value):
             total_degrees = 360 - circle_break_degrees
-            return start_rad + total_degrees * ((value - self.vmin)/(self.vmax - self.vmin)) * (math.pi / 180)
+            return start_rad + total_degrees * ((value - self.vmin) / (self.vmax - self.vmin)) * (math.pi / 180)
 
-        # This is needed to prevent showing line from previous position
         ctx.set_source_rgb(0, 0, 0)
         ctx.move_to(xc, yc)
         ctx.stroke()
-
-        # Inner circle
         ctx.arc(xc, yc, radius, start_rad, end_rad)
         ctx.set_source_rgb(*definitions.get_color_rgb_float(definitions.GRAY_LIGHT))
         ctx.set_line_width(1)
         ctx.stroke()
-
-        # Outer circle
         ctx.arc(xc, yc, radius, start_rad, get_rad_for_value(self.value))
-        ctx.set_source_rgb(* definitions.get_color_rgb_float(color))
+        ctx.set_source_rgb(*definitions.get_color_rgb_float(color))
         ctx.set_line_width(3)
         ctx.stroke()
-
         ctx.restore()
-    
-    def update_value(self, increment): 
+
+    def update_value(self, increment):
         if self.value + increment > self.vmax:
             self.value = self.vmax
         elif self.value + increment < self.vmin:
@@ -90,13 +77,11 @@ class MIDICCControl(object):
         else:
             self.value += increment
 
-        # Send cc message, subtract 1 to number because MIDO works from 0 - 127
         msg = mido.Message('control_change', control=self.cc_number, value=self.value)
-        self.send_midi_func(msg)
-
+        if self.send_midi_func:
+            self.send_midi_func(msg)
 
 class MIDICCMode(PyshaMode):
-
     midi_cc_button_names = [
         push2_python.constants.BUTTON_UPPER_ROW_1,
         push2_python.constants.BUTTON_UPPER_ROW_2,
@@ -114,35 +99,73 @@ class MIDICCMode(PyshaMode):
     def initialize(self, settings=None):
         for instrument_short_name in self.get_all_distinct_instrument_short_names_helper():
             try:
-                midi_cc = json.load(open(os.path.join(definitions.INSTRUMENT_DEFINITION_FOLDER, '{}.json'.format(instrument_short_name)))).get('midi_cc', None)
+                midi_cc = json.load(
+                    open(os.path.join(definitions.INSTRUMENT_DEFINITION_FOLDER, f'{instrument_short_name}.json'))
+                ).get('midi_cc', None)
             except FileNotFoundError:
                 midi_cc = None
-            
+
             if midi_cc is not None:
-                # Create MIDI CC mappings for instruments with definitions
                 self.instrument_midi_control_ccs[instrument_short_name] = []
                 for section in midi_cc:
                     section_name = section['section']
                     for name, cc_number in section['controls']:
-                        control = MIDICCControl(cc_number, name, section_name, self.get_current_track_color_helper, self.app.send_midi)
+                        control = MIDICCControl(
+                            cc_number, name, section_name,
+                            self.get_current_track_color_helper,
+                            self.send_cc_to_current_instrument  # <-- route vers port instrument
+                        )
                         if section.get('control_value_label_maps', {}).get(name, False):
                             control.value_labels_map = section['control_value_label_maps'][name]
                         self.instrument_midi_control_ccs[instrument_short_name].append(control)
-                print('Loaded {0} MIDI cc mappings for instrument {1}'.format(len(self.instrument_midi_control_ccs[instrument_short_name]), instrument_short_name))
+                print('Loaded {0} MIDI cc mappings for instrument {1}'.format(
+                    len(self.instrument_midi_control_ccs[instrument_short_name]), instrument_short_name))
             else:
-                # No definition file for instrument exists, or no midi CC were defined for that instrument
+                # fallback: default CCs
                 self.instrument_midi_control_ccs[instrument_short_name] = []
-                for i in range(0, 128):
+                for i in range(128):
                     section_s = (i // 16) * 16
                     section_e = section_s + 15
-                    control = MIDICCControl(i, 'CC {0}'.format(i), '{0} to {1}'.format(section_s, section_e), self.get_current_track_color_helper, self.app.send_midi)
+                    control = MIDICCControl(
+                        i, f'CC {i}', f'{section_s} to {section_e}',
+                        self.get_current_track_color_helper,
+                        self.send_cc_to_current_instrument
+                    )
                     self.instrument_midi_control_ccs[instrument_short_name].append(control)
                 print('Loaded default MIDI cc mappings for instrument {0}'.format(instrument_short_name))
-      
-        # Fill in current page and section variables
-        for instrument_short_name in self.instrument_midi_control_ccs:
-            self.current_selected_section_and_page[instrument_short_name] = (self.instrument_midi_control_ccs[instrument_short_name][0].section, 0)
 
+        for instrument_short_name in self.instrument_midi_control_ccs:
+            self.current_selected_section_and_page[instrument_short_name] = (
+                self.instrument_midi_control_ccs[instrument_short_name][0].section, 0)
+
+    def send_cc_to_current_instrument(self, msg: mido.Message):
+        # Instrument sélectionné via synth_window ou app
+        instrument_name = getattr(self.app, 'current_instrument_definition', None)
+        if not instrument_name:
+            return
+
+        instrument_ports = self.app.instrument_midi_ports.get(instrument_name, None)
+        if instrument_ports is None or instrument_ports.get("out") is None:
+            return
+
+        midi_out_port = instrument_ports["out"]
+
+        # Récupérer canal MIDI depuis JSON
+        instrument_file = os.path.join(definitions.INSTRUMENT_DEFINITION_FOLDER, f'{instrument_name}.json')
+        try:
+            with open(instrument_file) as f:
+                midi_channel = json.load(f).get('midi_channel', 1)
+        except Exception:
+            midi_channel = 1
+
+        if hasattr(msg, 'channel'):
+            msg = msg.copy(channel=midi_channel - 1)  # Mido 0-indexed
+
+        midi_out_port.send(msg)
+
+    # -----------------------
+    # Fonctions helpers existantes
+    # -----------------------
     def get_all_distinct_instrument_short_names_helper(self):
         return self.app.track_selection_mode.get_all_distinct_instrument_short_names()
 
