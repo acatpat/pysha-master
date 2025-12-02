@@ -1,7 +1,7 @@
 # ui/sequencer_window.py
 
 from PyQt6.QtWidgets import (
-    QWidget, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLabel, QDial
+    QWidget, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLabel, QDial, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 
@@ -68,6 +68,23 @@ class SequencerWindow(QWidget):
         self.tempo_dial.setValue(self.tempo_bpm)
         self.tempo_dial.valueChanged.connect(self.set_tempo)
         tempo_box.addWidget(self.tempo_dial)
+
+        # --- PRESETS ---
+        preset_layout = QHBoxLayout()
+        main_layout.addLayout(preset_layout)
+
+        self.preset_combo = QComboBox()
+        self.preset_combo.setFixedWidth(200)
+        preset_layout.addWidget(self.preset_combo)
+
+        self.btn_preset_save = QPushButton("Save Preset")
+        self.btn_preset_save.clicked.connect(self.on_save_preset)
+        preset_layout.addWidget(self.btn_preset_save)
+
+        self.btn_preset_load = QPushButton("Load Preset")
+        self.btn_preset_load.clicked.connect(self.on_load_preset)
+        preset_layout.addWidget(self.btn_preset_load)
+
 
         #
         # --- Sélecteur de résolution ---
@@ -256,3 +273,37 @@ class SequencerWindow(QWidget):
         Appelée par le controller après un toggle_step.
         """
         self.update_steps_display()
+
+    def refresh_preset_list(self):
+        if not hasattr(self, "app") or not hasattr(self.app, "list_presets"):
+            return
+        import os
+        self.preset_combo.clear()
+        presets = self.app.list_presets()
+        for p in presets:
+            name = os.path.basename(p)
+            self.preset_combo.addItem(name, p)
+
+
+    def on_save_preset(self):
+        if not hasattr(self, "app") or not hasattr(self.app, "save_preset_auto"):
+            return
+        filename = self.app.save_preset_auto()
+        self.refresh_preset_list()
+
+        import os
+        base = os.path.basename(filename)
+        idx = self.preset_combo.findText(base)
+        if idx >= 0:
+            self.preset_combo.setCurrentIndex(idx)
+
+
+    def on_load_preset(self):
+        idx = self.preset_combo.currentIndex()
+        if idx < 0:
+            return
+
+        filepath = self.preset_combo.itemData(idx)
+        if filepath and hasattr(self, "app") and hasattr(self.app, "load_preset"):
+            self.app.load_preset(filepath)
+            self.update_steps_display()

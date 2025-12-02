@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import traceback
+import json
 
 import cairo
 import numpy
@@ -14,6 +15,7 @@ mido.set_backend('mido.backends.rtmidi')
 import push2_python
 import threading
 import time
+from datetime import datetime
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
@@ -114,6 +116,8 @@ class PyshaApp(object):
         self.sequencer_window = SequencerWindow()
         self.sequencer_window.app = self
 
+        self.sequencer_window.refresh_preset_list()
+
         self.sequencer_window.sequencer_target = self.sequencer_target
         self.sequencer_window.show()
 
@@ -186,6 +190,257 @@ class PyshaApp(object):
         # ou méthode nommée :
         self.track_selection_mode.on_track_selected_cb = self.synth_window.set_current_instrument
 
+    ### preset ###
+
+    def _ensure_presets_dir(self):
+        """Create presets dir if it does not exist."""
+        presets_dir = os.path.join(os.getcwd(), 'presets')
+        if not os.path.isdir(presets_dir):
+            os.makedirs(presets_dir, exist_ok=True)
+        return presets_dir
+
+    def _next_preset_filename(self):
+        """Return next available preset filename: preset_01.json, preset_02.json ..."""
+        presets_dir = self._ensure_presets_dir()
+        existing = sorted([f for f in os.listdir(presets_dir) if f.startswith('preset_') and f.endswith('.json')])
+        if not existing:
+            return os.path.join(presets_dir, 'preset_01.json')
+        # find highest number
+        nums = []
+        for name in existing:
+            try:
+                base = name[len('preset_'):-len('.json')]
+                nums.append(int(base))
+            except Exception:
+                pass
+        next_num = max(nums) + 1 if nums else 1
+        return os.path.join(presets_dir, f'preset_{next_num:02d}.json')
+
+    def _port_to_name(self, port):
+        """
+        Convertit un port MIDI (str/obj/None) en nom lisible.
+        Empêche l'écriture d'objets non JSON.
+        """
+        if port is None:
+            return None
+
+        if isinstance(port, str):
+            return port
+
+        # Essayer attr .name (mido)
+        name = getattr(port, "name", None)
+        if isinstance(name, str):
+            return name
+
+        # Essayer attr .port_name (RtMidi)
+        name = getattr(port, "port_name", None)
+        if isinstance(name, str):
+            return name
+
+        # Fall back
+        try:
+            return str(port)
+        except:
+            return None
+
+
+    def save_preset_auto(self):
+        """
+        Save a preset to the next free file in presets/.
+        Saves:
+        - synth_window.instrument_midi_ports names
+        - sequencer_window.steps (full 16 x 32 boolean grid)
+        - tempo_bpm, steps_per_beat
+        """
+        presets_dir = self._ensure_presets_dir()
+        filename = self._next_preset_filename()
+
+        # Build preset dict
+        preset = {}
+        preset['meta'] = {
+            'created_at': datetime.utcnow().isoformat() + 'Z',
+            'app_version': getattr(definitions, 'VERSION', 'unknown')
+        }
+
+        # Instruments + midi ports (store names)
+        preset['tracks'] = []
+        # Expect synth_window.instrument_midi_ports to be a dict keyed by instrument short name
+        instrument_ports = getattr(self.synth_window, 'instrument_midi_ports', {}) or {}
+        # If track_selection_mode has tracks_info, prefer that ordering (non-breaking)
+        tracks_info = getattr(self.track_selection_mode, 'tracks_info', None)
+        if tracks_info:
+            for t in tracks_info:
+                instr = t.get('instrument_short_name')
+                if instr is None:
+                    continue
+                info = {'instrument': instr}
+                port_info = instrument_ports.get(instr, {}) or {}
+                # store the human-readable name if present, else None
+                info["midi_in_port_name"] = self._port_to_name(port_info.get("in"))
+                info["midi_out_port_name"] = self._port_to_name(port_info.get("out"))
+                preset['tracks'].append(info)
+        else:
+            # fallback: iterate instrument_ports keys
+            for instr, port_info in instrument_ports.items():
+                info = {'instrument': instr}
+                info["midi_in_port_name"] = self._port_to_name(port_info.get("in"))
+                info["midi_out_port_name"] = self._port_to_name(port_info.get("out"))
+                preset['tracks'].append(info)
+
+        # Sequencer state
+        seq_win = getattr(self, 'sequencer_window', None)
+        if seq_win is not None:
+            # deep copy of steps (list of lists of bool)
+            preset['sequencer'] = {
+                'steps': [list(row) for row in getattr(seq_win, 'steps', [])],
+                'selected_pad': getattr(seq_win, 'selected_pad', 0),
+                'tempo_bpm': getattr(seq_win, 'tempo_bpm', 120),
+                'steps_per_beat': getattr(seq_win, 'steps_per_beat', 4)
+            }
+        else:
+            preset['sequencer'] = {}
+
+        # Write file
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(preset, f, indent=2, ensure_ascii=False)
+            print(f'[PRESET] Saved preset to {filename}')
+            # optional notification
+            self.add_display_notification(f'Preset saved: {os.path.basename(filename)}')
+        except Exception as e:
+            print(f'[PRESET] Error saving preset: {e}')
+            self.add_display_notification('Error saving preset')
+
+        return filename
+
+    def list_presets(self):
+        """Return sorted list of preset filenames (full path)."""
+        presets_dir = self._ensure_presets_dir()
+        files = [os.path.join(presets_dir, f) for f in os.listdir(presets_dir) if f.endswith('.json')]
+        files.sort()
+        return files
+
+    def load_preset(self, filepath):
+        """
+        Load a preset from filepath.
+        Behaviour:
+        - For each track saved, attempt to match the saved midi_in_port_name / midi_out_port_name
+            to currently available mido input/output names. If found, update synth_window.instrument_midi_ports[instr]['in'/'out'] to that full name.
+            If not found -> IGNORE (do not raise), per B1.
+        - Restore sequencer steps, tempo_bpm, steps_per_beat.
+        - Do NOT change track selection, do NOT reset current_step, do NOT stop/start clock (C: none of that).
+        """
+        if not os.path.isfile(filepath):
+            print(f'[PRESET] File not found: {filepath}')
+            self.add_display_notification('Preset file not found')
+            return False
+
+        try:
+            data = json.load(open(filepath, 'r', encoding='utf-8'))
+        except Exception as e:
+            print(f'[PRESET] Error reading preset {filepath}: {e}')
+            self.add_display_notification('Error reading preset')
+            return False
+
+        # --- Attempt to apply instrument port names ---
+        instrument_ports = getattr(self.synth_window, 'instrument_midi_ports', {}) or {}
+        available_ins = [n for n in mido.get_input_names() if 'Ableton Push' not in n and 'RtMidi' not in n and 'Through' not in n]
+        available_outs = [n for n in mido.get_output_names() if 'Ableton Push' not in n and 'RtMidi' not in n and 'Through' not in n]
+        saved_tracks = data.get('tracks', [])
+
+        for t in saved_tracks:
+            instr = t.get('instrument')
+            in_name = t.get('midi_in_port_name')
+            out_name = t.get('midi_out_port_name')
+            if instr not in instrument_ports:
+                # create placeholder entry if missing to avoid KeyError elsewhere
+                instrument_ports[instr] = {}
+            # try to find exact match in available lists
+            matched_in = None
+            matched_out = None
+            if in_name:
+                for cand in available_ins:
+                    if in_name in cand:
+                        matched_in = cand
+                        break
+            if out_name:
+                for cand in available_outs:
+                    if out_name in cand:
+                        matched_out = cand
+                        break
+
+            # Apply if matched, otherwise leave as-is (ignore missing) — B1
+            if matched_in:
+                # store name so other modules can use it; do NOT forcibly open global self.midi_in unless desired
+                instrument_ports[instr]['in'] = matched_in
+                print(f'[PRESET] applied IN for {instr}: {matched_in}')
+            else:
+                # keep existing value (do nothing)
+                print(f'[PRESET] IN not found for {instr}: {in_name} -> ignored')
+
+            if matched_out:
+                instrument_ports[instr]['out'] = matched_out
+                print(f'[PRESET] applied OUT for {instr}: {matched_out}')
+            else:
+                print(f'[PRESET] OUT not found for {instr}: {out_name} -> ignored')
+
+        # push updated ports back to synth_window (same object usually)
+        try:
+            self.synth_window.instrument_midi_ports = instrument_ports
+        except Exception:
+            pass
+
+        # --- Restore sequencer state (steps, tempo, steps_per_beat, selected_pad) ---
+        seq = data.get('sequencer', {})
+        seq_steps = seq.get('steps')
+        if seq_steps and getattr(self, 'sequencer_window', None):
+            # ensure shape matches existing structure (do not forcibly resize pads)
+            sw = self.sequencer_window
+            # Only overwrite steps content if dimensions match to avoid surprising changes.
+            if isinstance(seq_steps, list) and len(seq_steps) == len(sw.steps):
+                # copy booleans
+                for i in range(len(sw.steps)):
+                    if isinstance(seq_steps[i], list) and len(seq_steps[i]) == len(sw.steps[i]):
+                        sw.steps[i] = [bool(x) for x in seq_steps[i]]
+                    else:
+                        print(f'[PRESET] steps shape mismatch for pad {i} -> skipping pad')
+            else:
+                print('[PRESET] saved steps shape does not match current sequencer -> skipping steps restore')
+
+        # restore tempo & steps_per_beat if present
+        if seq.get('tempo_bpm') is not None and getattr(self, 'sequencer_window', None):
+            try:
+                self.sequencer_window.tempo_bpm = seq.get('tempo_bpm')
+                # update UI control if present
+                if hasattr(self.sequencer_window, 'tempo_dial'):
+                    self.sequencer_window.tempo_dial.setValue(int(self.sequencer_window.tempo_bpm))
+                if hasattr(self.sequencer_window, 'tempo_label'):
+                    self.sequencer_window.tempo_label.setText(f"{int(self.sequencer_window.tempo_bpm)} BPM")
+            except Exception:
+                pass
+
+        if seq.get('steps_per_beat') is not None and getattr(self, 'sequencer_window', None):
+            try:
+                self.sequencer_window.steps_per_beat = int(seq.get('steps_per_beat'))
+                # update resolution buttons
+                if hasattr(self.sequencer_window, 'reso_buttons'):
+                    for btn, steps in self.sequencer_window.reso_buttons:
+                        btn.setChecked(steps == self.sequencer_window.steps_per_beat)
+            except Exception:
+                pass
+
+        # update steps display and push feedback where appropriate, but DO NOT modify play/clock/state
+        if getattr(self, 'sequencer_window', None):
+            try:
+                self.sequencer_window.update_steps_display()
+            except Exception:
+                pass
+
+        # notify user
+        self.add_display_notification(f'Preset loaded: {os.path.basename(filepath)}')
+        print(f'[PRESET] Loaded preset {filepath}')
+        return True
+
 
     from controller.sequencer_controller import SequencerController
     from ui.sequencer_window import SequencerWindow
@@ -251,6 +506,7 @@ class PyshaApp(object):
                 last_time = time.perf_counter()  # reset temps si stop
 
             time.sleep(0.001)  # sleep court pour ne pas bloquer CPU
+
 
     def start_clock(self):
         """Active le clock et envoie Start à tous les synthés."""
