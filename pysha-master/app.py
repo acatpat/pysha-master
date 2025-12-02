@@ -149,6 +149,10 @@ class PyshaApp(object):
             sequencer_window=self.sequencer_window
         )
 
+        # Lier Synths_Midi à l’App
+        self.synths_midi.incoming_midi_callback = self.midi_in_handler
+
+
         # --- Initialisation des modes ---
         self.init_modes(settings)
 
