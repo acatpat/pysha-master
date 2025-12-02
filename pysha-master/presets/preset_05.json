@@ -1,12 +1,12 @@
 {
   "meta": {
-    "created_at": "2025-12-02T00:18:47.033084Z",
+    "created_at": "2025-12-02T02:14:24.848083Z",
     "app_version": "0.25"
   },
   "tracks": [
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -36,7 +36,7 @@
     },
     {
       "instrument": "PRO800",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "PRO 800 1"
     },
     {
@@ -46,7 +46,7 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -86,7 +86,7 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -126,7 +126,7 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -166,7 +166,7 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -206,7 +206,7 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -246,7 +246,7 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -286,7 +286,7 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": null,
+      "midi_in_port_name": "",
       "midi_out_port_name": "Arturia DrumBrute 6"
     },
     {
@@ -432,35 +432,35 @@
       [
         false,
         false,
+        true,
         false,
         false,
         false,
+        true,
         false,
         false,
         false,
+        true,
         false,
         false,
         false,
+        true,
         false,
         false,
         false,
+        true,
         false,
         false,
         false,
+        true,
         false,
         false,
         false,
+        true,
         false,
         false,
         false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
+        true,
         false
       ],
       [
@@ -872,7 +872,7 @@
         false
       ]
     ],
-    "selected_pad": 2,
+    "selected_pad": 3,
     "tempo_bpm": 120,
     "steps_per_beat": 4
   }

@@ -77,6 +77,8 @@ class SequencerWindow(QWidget):
         self.preset_combo.setFixedWidth(200)
         preset_layout.addWidget(self.preset_combo)
 
+
+
         self.btn_preset_save = QPushButton("Save Preset")
         self.btn_preset_save.clicked.connect(self.on_save_preset)
         preset_layout.addWidget(self.btn_preset_save)
@@ -299,11 +301,15 @@ class SequencerWindow(QWidget):
 
 
     def on_load_preset(self):
+        if not hasattr(self.app, "synth_window") or self.app.synth_window is None:
+            print("[PRESET] synth_window not ready yet -> skipping load")
+            return
+
         idx = self.preset_combo.currentIndex()
         if idx < 0:
             return
 
         filepath = self.preset_combo.itemData(idx)
-        if filepath and hasattr(self, "app") and hasattr(self.app, "load_preset"):
+        if filepath and hasattr(self.app, "load_preset"):
             self.app.load_preset(filepath)
             self.update_steps_display()
