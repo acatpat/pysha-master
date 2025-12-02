@@ -1,0 +1,45 @@
+pysha-master/
+
+	Controller/
+		sequencer_controller.py
+		sequencer_target.py
+	
+	docs/
+
+	instrument_definitions/
+		DDRM.json
+		DOMINION.json
+		etc.
+	
+	presets/
+		preset_01.json
+		etc.
+
+	ui/
+		sequencer_window.py
+		synth_window.py
+
+	.gitignore
+
+	app.py
+	architecture.txt
+	ddrm_tone_selector_mode.py
+	definitions.py
+	display_utils.py
+	favourite_presets.json
+	LICENSE
+	main_controls_mode.py
+	main_test
+	melodic_mode.py
+	midi_cc_mode.py
+	midi_manager.py
+	preset_selection_mode.py
+	pyramid_track_triggering_mode.py
+	README.md.txt
+	requirements
+	rhythmic_mode.py
+	settings.json
+	settings_mode.py
+	slice_notes_mode.py
+	track_listing.json
+	track_selection_mode.py

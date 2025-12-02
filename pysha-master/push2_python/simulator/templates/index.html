@@ -1,0 +1,581 @@
+<html>
+    <head>
+        <title>push2-python simulator</title>
+        <style>
+            body {
+                font-family: Helvetica, Sans-Serif;
+                color: rgb(116, 116, 116);
+                background-color: #000;
+                -moz-user-select: none;
+                -khtml-user-select: none;
+                -webkit-user-select: none;
+                user-select: none;
+            }
+
+            h1 {
+                color: white;
+            }
+
+            .button {
+                width: 44px;
+                height: 44px;
+                border: 1px solid rgb(116, 116, 116);
+                margin: 2px;
+                display: inline-block;
+                font-size: 10px;
+                cursor: default;
+            }
+
+            .button2 {
+                width: 44px;
+                height: 38px;
+                border: 1px solid rgb(116, 116, 116);
+                margin: 2px;
+                display: inline-block;
+                font-size: 10px;
+                cursor: default;
+            }
+
+            .buttonLong {
+                width: 64px;
+                height: 26px;
+                border: 1px solid rgb(116, 116, 116);
+                margin: 2px;
+                display: inline-block;
+                font-size: 10px;
+                cursor: default;
+            }
+
+            .buttonLong2 {
+                width: 44px;
+                height: 26px;
+                border: 1px solid rgb(116, 116, 116);
+                margin: 2px;
+                display: inline-block;
+                font-size: 10px;
+                cursor: default;
+            }
+
+            .buttonLong3 {
+                width: 40px;
+                height: 26px;
+                border: 1px solid rgb(116, 116, 116);
+                margin: 2px;
+                display: inline-block;
+                font-size: 10px;
+                cursor: default;
+            }
+
+            .pad {
+                width: 64px;
+                height: 44px;
+                border: 1px solid rgb(116, 116, 116);
+                margin: 2px;
+                display: inline-block;
+                font-size: 10px;
+                cursor: default;
+            }
+
+            .encoder {
+                height: 24px;
+                width: 47px;
+                margin: 2px;
+                display: inline-block;
+                margin-left: 13px;
+                margin-right: 10px;
+                margin-bottom: 15px;
+                cursor: default;
+            }
+
+            .encoderButton {
+                height: 24px;
+                width: 12px;
+                display: inline-block;
+                border: 1px solid rgb(116, 116, 116);
+                font-size: 10px;
+                text-align: center;
+                line-height: 24px;
+            }
+
+            .separator {
+                width: 10px;
+                height: 10px;
+                display: inline-block;
+            }
+
+            .separatorLong {
+                width: 10px;
+                height: 77px;
+                display: inline-block;
+            }
+
+            .column {
+                display: inline-block;
+                max-width: 60px;
+            }
+
+            .columnNoInline {
+                max-width: 60px;
+            }
+            
+            .verticalPart {
+                display: inline-block;
+                vertical-align: top;
+            }
+
+            #display {
+                width: 554px;
+                height: 92px;
+                margin: 2px;
+                border: 1px solid rgb(116, 116, 116);
+                display: inline-block;
+                vertical-align: top;
+                margin-top:3px;
+            }
+
+            #displayImg {
+                height: 100%;
+                width: 100%;
+            }
+
+            #uiWrapper {
+                margin-top: 30px;
+            }
+
+            .blink {
+                animation: blinker 1s linear infinite;
+            }
+
+            @keyframes blinker {
+                50% {
+                    opacity: 0;
+                }
+            }
+
+        </style>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+        <script type="text/javascript" charset="utf-8">
+            var socket = io();
+            const padsCurrentlyPressed = new Set();
+            const buttonsCurrentlyPressed = new Set();
+            const encodersCurrentlyPressed = new Set();
+            
+            socket.on('connect', () => {
+                socket.emit('my event', {data: 'I\'m connected!'});
+            });
+            
+            socket.on('setElementColor', (data) => {
+                var element = document.getElementById(data.midiTrigger);
+                var elementIsButton = data.midiTrigger.indexOf('cc') > -1;
+                if (element !== null){
+                    if (element.dataset.rgb === "true"){
+                        if (elementIsButton){
+                            element.style.color = 'rgb(' + data.rgb[0] + ',' + data.rgb[1] + ',' + data.rgb[2] + ')';
+                        } else {
+                            element.style.backgroundColor = 'rgb(' + data.rgb[0] + ',' + data.rgb[1] + ',' + data.rgb[2] + ')';
+                        }
+                    } else {
+                        if (elementIsButton){
+                            element.style.color = 'rgb(' + data.bwRgb[0] + ',' + data.bwRgb[1] + ',' + data.bwRgb[2] + ')';
+                        } else {
+                            element.style.backgroundColor = 'rgb(' + data.bwRgb[0] + ',' + data.bwRgb[1] + ',' + data.bwRgb[2] + ')';
+                        }
+                    }
+                    if (data.blink){
+                        element.classList.add('blink');    
+                    } else {
+                        element.classList.remove('blink');
+                    }   
+                }
+            });
+
+            socket.on('setDisplay', (data) => {
+                var element = document.getElementById("displayImg");
+                element.src = data.base64Image;
+            });
+
+            function createDivWithClass(className) {
+                var element = document.createElement('div');
+                element.classList.add(className);
+                return element;
+            }
+
+            function createPad(i, j) {
+                var element = document.createElement('div');
+                element.innerHTML = "&nbsp;";
+                element.classList.add('pad');
+                element.dataset.rgb = true;
+                element.dataset.midiTrigger = 'nn' + ((92 + j) - i * 8).toString();
+                element.id = element.dataset.midiTrigger;
+                element.title = element.dataset.midiTrigger;
+                element.addEventListener('mousedown', (event) => {
+                    if (!padsCurrentlyPressed.has(element.dataset.midiTrigger)) {
+                        // Only trigger if it is not yet pressed
+                        padsCurrentlyPressed.add(element.dataset.midiTrigger);
+                        socket.emit('padPressed', element.dataset.midiTrigger);
+                    }
+                });
+                element.addEventListener('mouseup', (event) => {
+                    if (!event.shiftKey) {
+                        if (padsCurrentlyPressed.has(element.dataset.midiTrigger)){
+                            // Only trigger if it was previously pressed
+                            padsCurrentlyPressed.delete(element.dataset.midiTrigger);
+                            socket.emit('padReleased', element.dataset.midiTrigger);
+                        }
+                    } else {
+                        // If shift key is pressed, don't fire "released" element as button/pad
+                        // will be hold until shift button is released
+                    }
+                });
+                element.addEventListener('mouseout', (event) => {
+                    if (!event.shiftKey) {
+                        if (padsCurrentlyPressed.has(element.dataset.midiTrigger)) {
+                            // Only trigger if it was still pressed
+                            padsCurrentlyPressed.delete(element.dataset.midiTrigger);
+                            socket.emit('padReleased', element.dataset.midiTrigger);
+                        }
+                    } else {
+                        // If shift key is pressed, don't fire "released" element as button/pad
+                        // will be hold until shift button is released
+                    }
+                });
+                return element;
+            }
+
+            function createButton(ccNumber, className, rgb, name){
+                var element = document.createElement('div');
+                if (name !== undefined){
+                    element.innerHTML = "&nbsp;" + name;
+                } else {
+                    element.innerHTML = "&nbsp;";
+                }
+                element.classList.add(className);
+                element.dataset.rgb = rgb;
+                element.dataset.midiTrigger = 'cc' + ccNumber.toString();
+                element.id = element.dataset.midiTrigger;
+                element.title = element.dataset.midiTrigger;
+                element.addEventListener('mousedown', (event) => {
+                    if (!buttonsCurrentlyPressed.has(element.dataset.midiTrigger)) {
+                        // Only trigger if not yet pressed
+                        buttonsCurrentlyPressed.add(element.dataset.midiTrigger);
+                        socket.emit('buttonPressed', element.dataset.midiTrigger);
+                    }
+                });
+                element.addEventListener('mouseup', (event) => {
+                    if (!event.shiftKey){
+                        if (buttonsCurrentlyPressed.has(element.dataset.midiTrigger)) {
+                            // Only trigger if it was previously pressed
+                            buttonsCurrentlyPressed.delete(element.dataset.midiTrigger);
+                            socket.emit('buttonReleased', element.dataset.midiTrigger);
+                        }
+                    } else {
+                        // If shift key is pressed, don't fire "released" element as button/pad
+                        // will be hold until shift button is released
+                    }
+                    
+                });
+                element.addEventListener('mouseout', (event) => {
+                    if (!event.shiftKey) {
+                        if (buttonsCurrentlyPressed.has(element.dataset.midiTrigger)) {
+                            // Only trigger if it was still pressed
+                            buttonsCurrentlyPressed.delete(element.dataset.midiTrigger);
+                            socket.emit('buttonReleased', element.dataset.midiTrigger);
+                        }
+                    } else {
+                        // If shift key is pressed, don't fire "released" element as button/pad
+                        // will be hold until shift button is released
+                    }
+                });
+                return element;
+            }
+
+            function createEncoder(ccNumber, nnNumber) {
+                var element = document.createElement('div');
+                //element.innerHTML = "&nbsp;";
+                element.classList.add("encoder");
+                element.dataset.midiTrigger = 'cc' + ccNumber.toString();
+                element.dataset.midiTriggerT = 'nn' + nnNumber.toString();
+                element.id = element.dataset.midiTrigger;
+                element.title = element.dataset.midiTrigger + " " + element.dataset.midiTriggerT; 
+
+                var elementLeft = document.createElement('div');
+                elementLeft.innerHTML = "<";
+                elementLeft.classList.add("encoderButton");
+                elementLeft.addEventListener('mousedown', (event) => {
+                    socket.emit('encdoerRotated', element.dataset.midiTrigger, event.shiftKey ? 117 : 127);
+                });
+
+                var elementTouch = document.createElement('div');
+                elementTouch.innerHTML = "T";
+                elementTouch.classList.add("encoderButton");
+                elementTouch.addEventListener('mousedown', (event) => {
+                    if (!encodersCurrentlyPressed.has(element.dataset.midiTriggerT)) {
+                        // Only trigger if not yet pressed
+                        encodersCurrentlyPressed.add(element.dataset.midiTriggerT);
+                        socket.emit('encdoerTouched', element.dataset.midiTriggerT);
+                    }
+                });
+                elementTouch.addEventListener('mouseup', (event) => {
+                    if (!event.shiftKey) {
+                        if (encodersCurrentlyPressed.has(element.dataset.midiTriggerT)) {
+                            // Only trigger if it was previously pressed
+                            encodersCurrentlyPressed.delete(element.dataset.midiTriggerT);
+                            socket.emit('encdoerReleased', element.dataset.midiTriggerT);
+                        }
+                    } else {
+                        // If shift key is pressed, don't fire "released" element as button/pad
+                        // will be hold until shift button is released
+                    }
+
+                });
+                elementTouch.addEventListener('mouseout', (event) => {
+                    if (!event.shiftKey) {
+                        if (encodersCurrentlyPressed.has(element.dataset.midiTriggerT)) {
+                            // Only trigger if it was still pressed
+                            encodersCurrentlyPressed.delete(element.dataset.midiTriggerT);
+                            socket.emit('encdoerReleased', element.dataset.midiTriggerT);
+                        }
+                    } else {
+                        // If shift key is pressed, don't fire "released" element as button/pad
+                        // will be hold until shift button is released
+                    }
+                });
+                var elementRight = document.createElement('div');
+                elementRight.innerHTML = ">";
+                elementRight.classList.add("encoderButton");
+                elementRight.addEventListener('mousedown', (event) => {
+                    socket.emit('encdoerRotated', element.dataset.midiTrigger, event.shiftKey ? 10: 1);
+                });
+
+                element.appendChild(elementLeft);
+                element.appendChild(elementTouch);
+                element.appendChild(elementRight);
+            
+                return element;
+            }
+
+            document.addEventListener("keyup", (event) => {
+                if (event.key === "Shift"){
+                    // Release all buttons/pads hold
+                    buttonsCurrentlyPressed.forEach(function (value) {
+                        socket.emit('buttonReleased', value);
+                    });
+                    buttonsCurrentlyPressed.clear();
+
+                    padsCurrentlyPressed.forEach(function (value) {
+                        socket.emit('padReleased', value);
+                    });
+                    padsCurrentlyPressed.clear();
+                }
+            });
+
+            function build_ui() {
+                var uiWrapper = document.getElementById('uiWrapper');
+
+                // Left-side part ---------------------------------------
+                var leftSidePart = document.createElement('div');
+                leftSidePart.classList.add('verticalPart');
+
+                var row = document.createElement('div');
+                row.appendChild(createEncoder(14, 10));
+                row.appendChild(createEncoder(15, 9));
+                leftSidePart.appendChild(row)
+                
+                var row = document.createElement('div');
+                row.appendChild(createButton(3, "buttonLong", false, "Tap tempo"));
+                row.appendChild(createButton(9, "buttonLong", false, "Metronome"));
+                leftSidePart.appendChild(row)
+
+                leftSidePart.appendChild(createDivWithClass('separator'));
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(118, "button", false, "Delete"));
+                leftSidePart.appendChild(row)
+                var row = document.createElement('div');
+                row.appendChild(createButton(119, "button", false, "Undo"));
+                leftSidePart.appendChild(row)
+
+                leftSidePart.appendChild(createDivWithClass('separator'));
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(60, "buttonLong3", true, "Mute"));
+                row.appendChild(createButton(61, "buttonLong3", true, "Solo"));
+                row.appendChild(createButton(29, "buttonLong3", true, "Stop"));
+                leftSidePart.appendChild(row)
+
+                leftSidePart.appendChild(createDivWithClass('separator'));
+
+                var column = document.createElement('div');
+                column.classList.add('columnNoInline');
+                column.appendChild(createButton(35 , "button2", false, "Convert"));
+                column.appendChild(createButton(117 , "button2", false, "Double"));
+                column.appendChild(createButton(116 , "button2", false, "Quantize"));
+                column.appendChild(createButton(88 , "button2", false, "Duplicate"));
+                column.appendChild(createButton(87 , "button2", false, "New"));
+                column.appendChild(createButton(90 , "button2", false, "Fixed"));
+                column.appendChild(createButton(89 , "button2", true, "Automate"));
+                column.appendChild(createButton(86 , "button2", true, "Record"));
+                column.appendChild(createButton(85 , "button", true, "Play"));
+                leftSidePart.appendChild(column);
+                
+                uiWrapper.appendChild(leftSidePart);
+                uiWrapper.appendChild(createDivWithClass('separator'));
+
+                // Middle part ---------------------------------------
+                var middlePart = document.createElement('div');
+                middlePart.classList.add('verticalPart');
+
+                // Encoders
+                var row = document.createElement('div');
+                for (var i=0; i<8; i++){
+                    row.appendChild(createEncoder(71 + i, i));
+                }
+                middlePart.appendChild(row)
+
+                // Upper buttons
+                var row = document.createElement('div');
+                for (var i=0; i<8; i++){
+                    row.appendChild(createButton(102 + i , "buttonLong", true, "__________"));
+                }
+                middlePart.appendChild(row);
+                middlePart.appendChild(createDivWithClass('separator'));
+
+                // Display
+                var row = document.createElement('div');
+                var display = document.createElement('div');
+                display.id = 'display'
+                var displayImg = document.createElement('img');
+                displayImg.id = 'displayImg'
+                display.appendChild(displayImg);
+                row.appendChild(display);
+                row.appendChild(createDivWithClass('separator'));
+                
+                // Buttons right of display
+                var column = document.createElement('div');
+                column.classList.add('column');
+                column.appendChild(createButton(52 , "button", false, "Add dev"));
+                column.appendChild(createButton(53 , "button", false, "Add tr"));
+                row.appendChild(column);
+                
+                middlePart.appendChild(row);
+                middlePart.appendChild(createDivWithClass('separator'));
+
+                // Lower buttons
+                var row = document.createElement('div');
+                for (var i=0; i<9; i++){
+                    if (i<8){
+                        row.appendChild(createButton(20 + i , "buttonLong", true, "__________"));
+                    } else {
+                        row.appendChild(createDivWithClass('separator'));
+                        row.appendChild(createButton(28 , "buttonLong2", false, "Master"));
+                    }
+                }
+                middlePart.appendChild(row);
+                middlePart.appendChild(createDivWithClass('separator'));
+
+                // Pads and scene buttons
+                for (var i=0; i<8; i++){
+                    var row = document.createElement('div');
+                    for (var j=0; j<9; j++){
+                        if (j<8){
+                            row.appendChild(createPad(i , j));
+                        } else {
+                            row.appendChild(createDivWithClass('separator'));
+                            row.appendChild(createButton(43 - i , "button", true, ">"));
+                        }
+                    }   
+                    middlePart.appendChild(row); 
+                }
+                uiWrapper.appendChild(middlePart);
+
+                // Right-side part ---------------------------------------
+                var rightSidePart = document.createElement('div');
+                rightSidePart.classList.add('verticalPart');
+
+                var row = document.createElement('div');
+                row.appendChild(createDivWithClass('separator'));
+                row.appendChild(createDivWithClass('separator'));
+                row.appendChild(createEncoder(79, 8));
+                rightSidePart.appendChild(row)
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(30, "buttonLong2", false, "Setup"));
+                row.appendChild(createButton(59, "buttonLong2", false, "User"));
+                rightSidePart.appendChild(row)
+
+                rightSidePart.appendChild(createDivWithClass('separator'));
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(110, "button", false, "Device"));
+                row.appendChild(createButton(112, "button", false, "Mix"));
+                rightSidePart.appendChild(row)
+                var row = document.createElement('div');
+                row.appendChild(createButton(111, "button", false, "Browse"));
+                row.appendChild(createButton(113, "button", false, "Clip"));
+                rightSidePart.appendChild(row)
+
+                rightSidePart.appendChild(createDivWithClass('separator'));
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(44, "button", false, "Left"));
+                row.appendChild(createButton(46, "button", false, "Up"));
+                rightSidePart.appendChild(row)
+                var row = document.createElement('div');
+                row.appendChild(createButton(47, "button", false, "Down"));
+                row.appendChild(createButton(45, "button", false, "Right"));
+                rightSidePart.appendChild(row)
+
+                rightSidePart.appendChild(createDivWithClass('separatorLong'));
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(56, "button", false, "Repeat"));
+                row.appendChild(createButton(57, "button", false, "Accent"));
+                rightSidePart.appendChild(row)
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(58, "buttonLong2", false, "Scale"));
+                row.appendChild(createButton(31, "buttonLong2", false, "Layout"));
+                rightSidePart.appendChild(row)
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(50, "button", false, "Note"));
+                row.appendChild(createButton(51, "button", false, "Session"));
+                rightSidePart.appendChild(row)
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(62, "button", false, "Page l"));
+                row.appendChild(createButton(55, "button", false, "Oct up"));
+                rightSidePart.appendChild(row)
+                var row = document.createElement('div');
+                row.appendChild(createButton(54, "button", false, "Oct do"));
+                row.appendChild(createButton(63, "button", false, "Page r"));
+                rightSidePart.appendChild(row)
+
+                var row = document.createElement('div');
+                row.appendChild(createButton(49, "buttonLong2", false, "Shift"));
+                row.appendChild(createButton(48, "buttonLong2", false, "Select"));
+                rightSidePart.appendChild(row)
+
+                uiWrapper.appendChild(rightSidePart);
+            }
+
+            document.addEventListener("DOMContentLoaded", () => {
+                build_ui();
+                setInterval(() => {
+                    // Because of the way in which the simulator server is set up, there might be problems when emiting WS messages from multiple
+                    // threads. To workaround this issues, there are some messages which are not sent directly to the browser but stored in a queue
+                    // in the server which is periodically consumed from the browser every 100ms using this setInterval function.
+                    socket.emit('getPendingMessages');
+                }, 100);
+
+            });
+
+        </script>
+    </head>
+    <body>
+        <h1>push2-python simulator</h1>
+        <p>Use shift+click to hold buttons/pads pressed. In encoders, use shift+click in the arrow keys to <i>rotate</i> with bigger increments.</p>
+        <div id="uiWrapper">
+        </div>
+    </body>
+</html>

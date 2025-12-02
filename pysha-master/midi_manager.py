@@ -3,6 +3,7 @@
 import mido
 import push2_python
 import definitions
+import rtmidi     # ← AJOUT demandé
 
 
 # =====================================================================
@@ -127,14 +128,10 @@ class Synths_Midi:
         pass
 
     # -----------------------------------------------------------
-    # ### BLOCK-PYRAMID ###
+    #  (SUPPRESSION demandée)
+    #  ### BLOCK-PYRAMID ###
+    #  -> retiré entièrement
     # -----------------------------------------------------------
-    def send_to_pyramid(self, msg):
-        """Envoi direct vers le Pyramid (mute/unmute / etc)."""
-        pass
-
-    def set_pyramid_channel(self, ch):
-        self.pyramid_channel = ch
 
     # -----------------------------------------------------------
     # ### BLOCK-ERROR & DIAGNOSTICS ###
