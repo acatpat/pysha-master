@@ -465,6 +465,53 @@ class PyshaApp(object):
 
         self.sequencer_window.show()  # affiche la fenêtre
 
+    def bind_midi_callbacks(self):
+        for port_name, port in self.synths_midi.midi_in_ports.items():
+            # On capture port_name dans une closure
+            def make_callback(name):
+                return lambda msg: self.midi_in_router(msg, name)
+            port.callback = make_callback(port_name)
+
+    def midi_in_router(self, msg, port_name):
+        """
+        Route les messages vers le bon handler :
+        - port global
+        - port instrument IN
+        """
+        # Si c'est un port instrument IN
+        for instr_name, ports in self.synths_midi.instrument_midi_ports.items():
+            if ports.get("in") is not None:
+                if ports["in"] == self.synths_midi.midi_in_ports.get(port_name):
+                    return self.midi_in_handler_instrument(msg, instr_name)
+
+        # Sinon → c'est un port global
+        return self.midi_in_handler_global(msg)
+
+    def midi_in_handler_instrument(self, msg, instrument_name):
+        """
+        Appelé uniquement si l'entrée concerne un instrument.
+        """
+        skip_message = False
+
+        if hasattr(msg, "channel"):
+            if self.midi_in_channel != -1 and msg.channel != self.midi_in_channel:
+                skip_message = True
+
+        if not skip_message:
+            # Pas d'envoi OUT automatique pour les ports instrument IN
+            # Juste forwarding aux modes
+            for mode in self.active_modes:
+                try:
+                    mode.on_midi_in(msg, source=instrument_name)
+                except Exception:
+                    pass
+
+    def midi_in_handler_global(self, msg):
+        # CE CODE EST DÉJÀ FAIT DANS PHASE ROUTING
+        return self.midi_in_handler(msg)
+
+
+
     # --------------------------
     # MIDI Clock global
     # --------------------------
@@ -852,25 +899,34 @@ class PyshaApp(object):
         self.send_midi(msg, use_original_msg_channel=True)
 
     def midi_in_handler(self, msg):
-        if hasattr(msg, 'channel'):  # This will rule out sysex and other "strange" messages that don't have channel info
-            if self.midi_in_channel == -1 or msg.channel == self.midi_in_channel:   # If midi input channel is set to -1 (all) or a specific channel
+        # This will rule out sysex and other "strange" messages that don't have channel info
+        if hasattr(msg, 'channel'):
+            # If midi input channel is set to -1 (all) or a specific channel
+            if self.midi_in_channel == -1 or msg.channel == self.midi_in_channel:
 
                 skip_message = False
+
+                # Aftertouch filtering logic (unchanged)
                 if msg.type == 'aftertouch':
                     now = time.time()
-                    if (abs(self.last_cp_value_recevied - msg.value) > 10) and (now - self.last_cp_value_recevied_time < 0.5):
+                    if (abs(self.last_cp_value_recevied - msg.value) > 10) \
+                    and (now - self.last_cp_value_recevied_time < 0.5):
                         skip_message = True
                     else:
                         self.last_cp_value_recevied = msg.value
                     self.last_cp_value_recevied_time = time.time()
-                    
+
                 if not skip_message:
-                    # Forward message to the main MIDI out
-                    self.send_midi(msg)
+                    # Forward message to main MIDI out (identical intention)
+                    self.synths_midi.send(msg)
 
                     # Forward the midi message to the active modes
                     for mode in self.active_modes:
-                        mode.on_midi_in(msg, source=self.midi_in.name)
+                        try:
+                            mode.on_midi_in(msg, source="global_in")
+                        except Exception:
+                            pass  # same robustness as old code
+
 
     def notes_midi_in_handler(self, msg):
         # Check if message is note on or off and check if the MIDI channel is the one assigned to the currently selected track
