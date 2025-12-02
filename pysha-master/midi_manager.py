@@ -3,8 +3,9 @@
 import mido
 import push2_python
 import definitions
-import rtmidi     # ← AJOUT demandé
-
+import rtmidi     
+import threading
+import time
 
 # =====================================================================
 #  ████  PUSH2_MIDI  ████
@@ -83,6 +84,21 @@ class Synths_Midi:
         self.incoming_midi_callback = None
 
         self._blacklist = ["Ableton Push", "RtMidi", "Through"]
+
+        # ---------------------------------------------------
+        # ### CLOCK STATE (interne maître) ###
+        # ---------------------------------------------------
+        self.bpm = 120.0
+        self.clock_factor = 1.0          # x0.5, x1, x2, etc. pour le séquenceur
+        self._clock_thread = None
+        self._clock_thread_running = False
+        self._clock_out_ports = set()    # noms logiques (les mêmes que pour open_out_port)
+        self._seq_tick_accumulator = 0.0
+
+        # callback optionnelle appelée à chaque tick séquenceur
+        # (à raccorder depuis l'app : ex. app.sequencer_controller.tick_from_clock_thread)
+        self.clock_tick_callback = None
+
 
     # -----------------------------------------------------------
     # ### BLOCK-PORTS ###
@@ -292,18 +308,173 @@ class Synths_Midi:
 
 
     # -----------------------------------------------------------
-    # ### BLOCK-ERROR & DIAGNOSTICS ###
+    # ### BLOCK-CLOCK ###
     # -----------------------------------------------------------
-    def port_exists(self, name):
-        return (name in mido.get_input_names()) or (name in mido.get_output_names())
 
+    def set_bpm(self, bpm):
+        """Définit le tempo interne du moteur de clock."""
+        try:
+            bpm = float(bpm)
+        except (TypeError, ValueError):
+            return
+        if bpm < 20.0:
+            bpm = 20.0
+        elif bpm > 300.0:
+            bpm = 300.0
+        self.bpm = bpm
 
-    def debug_print_ports(self):
-        print("=== Synths_Midi INPUT PORTS ===")
-        for name, port in self.midi_in_ports.items():
-            print(f"IN: {name} -> {port}")
+    def set_clock_multiplier(self, factor):
+        """
+        Définit un multiplicateur interne pour le séquenceur.
+        La clock MIDI reste à 24ppqn, seule la fréquence des ticks
+        du séquenceur est affectée.
 
-        print("=== Synths_Midi OUTPUT PORTS ===")
-        for name, port in self.midi_out_ports.items():
-            print(f"OUT: {name} -> {port}")
+        Exemples :
+        - 0.5 => séquenceur deux fois plus lent
+        - 1.0 => normal
+        - 2.0 => séquenceur deux fois plus rapide
+        """
+        try:
+            factor = float(factor)
+        except (TypeError, ValueError):
+            return
+        if factor <= 0:
+            factor = 1.0
+        self.clock_factor = factor
 
+    def start_clock(self):
+        """
+        Démarre la clock interne :
+        - lance le thread si nécessaire
+        - envoie un message MIDI START aux sorties clock activées
+        (le reset du séquenceur doit être géré par l'app)
+        """
+        if self._clock_thread_running:
+            return
+
+        self._clock_thread_running = True
+        self._seq_tick_accumulator = 0.0
+
+        # Thread clock
+        self._clock_thread = threading.Thread(
+            target=self._clock_thread_loop,
+            daemon=True
+        )
+        self._clock_thread.start()
+
+        # MIDI START
+        start_msg = mido.Message('start')
+        self._send_clock_message_to_outputs(start_msg)
+
+    def stop_clock(self):
+        """
+        Arrête la clock interne :
+        - stoppe le thread
+        - envoie un message MIDI STOP
+        """
+        if not self._clock_thread_running:
+            return
+
+        self._clock_thread_running = False
+        # on ne join pas forcément (daemon=True), pour ne pas bloquer l'UI
+
+        stop_msg = mido.Message('stop')
+        self._send_clock_message_to_outputs(stop_msg)
+
+    def continue_clock(self):
+        """
+        Continue la clock interne sans reset :
+        - relance le thread si nécessaire
+        - envoie MIDI CONTINUE
+        """
+        if not self._clock_thread_running:
+            self._clock_thread_running = True
+            self._clock_thread = threading.Thread(
+                target=self._clock_thread_loop,
+                daemon=True
+            )
+            self._clock_thread.start()
+
+        cont_msg = mido.Message('continue')
+        self._send_clock_message_to_outputs(cont_msg)
+
+    def enable_clock_output(self, port_name):
+        """
+        Autorise l'envoi de la clock vers un OUT.
+        Si le port n'est pas encore ouvert, on essaie de l'ouvrir.
+        """
+        if port_name not in self.midi_out_ports:
+            out_port = self.open_out_port(port_name)
+            if out_port is None:
+                print(f'Clock: could not enable clock on OUT "{port_name}"')
+                return
+        self._clock_out_ports.add(port_name)
+
+    def disable_clock_output(self, port_name):
+        """Désactive l'envoi de la clock vers ce port."""
+        if port_name in self._clock_out_ports:
+            self._clock_out_ports.remove(port_name)
+
+    def _clock_thread_loop(self):
+        """
+        Boucle interne :
+        - envoie la clock MIDI (24ppqn) vers les sorties activées
+        - notifie le séquenceur via clock_tick_callback
+        - applique clock_factor uniquement pour le séquenceur
+        """
+        # On utilise perf_counter pour minimiser la dérive
+        next_tick_time = time.perf_counter()
+
+        while self._clock_thread_running:
+            # Intervalle entre deux ticks MIDI (24 ppqn)
+            seconds_per_quarter = 60.0 / self.bpm
+            tick_interval = seconds_per_quarter / 24.0
+
+            now = time.perf_counter()
+            if now >= next_tick_time:
+                next_tick_time += tick_interval
+
+                # 1) envoyer un tick MIDI clock (0xF8)
+                clk_msg = mido.Message('clock')
+                self._send_clock_message_to_outputs(clk_msg)
+
+                # 2) notifier le séquenceur avec un facteur
+                self._notify_sequencer_tick()
+
+            # petit sleep pour éviter de monopoliser le CPU
+            time.sleep(0.0005)
+
+    def _send_clock_message_to_outputs(self, msg):
+        """
+        Envoie un message de type clock/start/stop/continue
+        uniquement sur les ports OUT définis dans _clock_out_ports.
+        """
+        for name in list(self._clock_out_ports):
+            port = self.midi_out_ports.get(name, None)
+            if port is None:
+                continue
+            try:
+                port.send(msg)
+            except Exception as e:
+                print(f'Clock: error sending on "{name}": {e}')
+
+    def _notify_sequencer_tick(self):
+        """
+        Notifie le séquenceur, en appliquant clock_factor.
+        - La clock MIDI reste à 24ppqn
+        - clock_factor ajuste la fréquence des ticks du séquenceur
+        """
+        if self.clock_tick_callback is None:
+            return
+
+        # on accumule les ticks MIDI avec un facteur
+        self._seq_tick_accumulator += self.clock_factor
+
+        # dès que l'accumulateur dépasse 1.0, on envoie un tick séquenceur
+        while self._seq_tick_accumulator >= 1.0:
+            self._seq_tick_accumulator -= 1.0
+            try:
+                self.clock_tick_callback()
+            except Exception:
+                # ne jamais faire crasher le thread clock
+                pass

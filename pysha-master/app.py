@@ -31,6 +31,8 @@ from main_controls_mode import MainControlsMode
 from midi_cc_mode import MIDICCMode
 from preset_selection_mode import PresetSelectionMode
 from ddrm_tone_selector_mode import DDRMToneSelectorMode
+from midi_manager import Synths_Midi
+
 
 from controller.sequencer_controller import SequencerController
 from ui.sequencer_window import SequencerWindow
@@ -142,6 +144,8 @@ class PyshaApp(object):
 
         self.synth_window.instrument_changed.connect(_on_synth_window_selection)
 
+        self.synths_midi = Synths_Midi()
+        
         # 3️⃣ Créer le controller
         self.sequencer_controller = SequencerController(
             app=self,
@@ -151,6 +155,10 @@ class PyshaApp(object):
 
         # Lier Synths_Midi à l’App
         self.synths_midi.incoming_midi_callback = self.midi_in_handler
+
+        # après avoir créé self.sequencer_controller et self.synths_midi
+        self.synths_midi.clock_tick_callback = self.sequencer_controller.tick_from_clock_thread
+
 
 
         # --- Initialisation des modes ---
@@ -511,16 +519,10 @@ class PyshaApp(object):
         return self.midi_in_handler(msg)
 
 
-
-    # --------------------------
-    # MIDI Clock global
-    # --------------------------
+    """"
     def start_midi_clock(self):
-        """
-        Thread global qui envoie le MIDI Clock aux synthés.
-        Start/Stop contrôlable via self._clock_running.
-        Drift minimal grâce à time.perf_counter.
-        """
+
+
 
 
         self._clock_running = False  # Flag pour contrôler l’envoi
@@ -566,22 +568,22 @@ class PyshaApp(object):
 
 
     def start_clock(self):
-        """Active le clock et envoie Start à tous les synthés."""
+
         self._clock_running = True
         self.send_start_to_all_instruments()
 
     def stop_clock(self):
-        """Désactive le clock et envoie Stop à tous les synthés."""
+ 
         self._clock_running = False
         self.send_stop_to_all_instruments()
 
     def continue_clock(self):
-        """Reprend l’envoi du clock (Continue)"""
+
         self._clock_running = True
         self.send_continue_to_all_instruments()            
 
     def send_start_to_all_instruments(self):
-        """Envoie un message MIDI Start à tous les synthés ouverts."""
+ 
         for track in self.track_selection_mode.tracks_info:
             midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
             if midi_port:
@@ -591,7 +593,7 @@ class PyshaApp(object):
                     pass
 
     def send_stop_to_all_instruments(self):
-        """Envoie un message MIDI Stop à tous les synthés ouverts."""
+
         for track in self.track_selection_mode.tracks_info:
             midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
             if midi_port:
@@ -601,7 +603,7 @@ class PyshaApp(object):
                     pass
 
     def send_continue_to_all_instruments(self):
-        """Envoie un message MIDI Continue à tous les synthés ouverts."""
+
         for track in self.track_selection_mode.tracks_info:
             midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
             if midi_port:
@@ -609,6 +611,30 @@ class PyshaApp(object):
                     midi_port.send(mido.Message('continue'))
                 except Exception:
                     pass
+    """
+    # -----------------------------------------------------------
+    # ### BLOCK-MASTER-CLOCK ###
+    # -----------------------------------------------------------
+    def start_clock(self):
+        """
+        Démarre la clock interne via Synths_Midi.
+        Respecte strictement la structure du séquenceur :
+        - start_clock() est appelée par SequencerWindow.toggle_play()
+        - Synths_Midi.start_clock() gère thread + MIDI START
+        """
+        if hasattr(self, "synths_midi") and self.synths_midi is not None:
+            self.sequencer_controller.current_step = 0  # RESET demande explicite : reset à START
+            self.synths_midi.start_clock()
+
+    def stop_clock(self):
+        """
+        Stoppe la clock interne via Synths_Midi.
+        - stop_clock() est appelée par SequencerWindow.toggle_play()
+        - Synths_Midi.stop_clock() gère thread + MIDI STOP
+        """
+        if hasattr(self, "synths_midi") and self.synths_midi is not None:
+            self.synths_midi.stop_clock()
+
 
 
     def get_all_modes(self):

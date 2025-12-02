@@ -27,7 +27,9 @@ class SequencerWindow(QWidget):
 
         # Timer de lecture
         self.timer = QTimer()
-        self.timer.timeout.connect(self.advance_step)
+        # Clock interne désactivée (gérée par Synths_Midi)
+        # self.timer.timeout.connect(self.advance_step)
+
 
         # Dans __init__ ou via setter
         self.sequencer_target = None  # sera assigné depuis l'extérieur
@@ -164,14 +166,22 @@ class SequencerWindow(QWidget):
     def toggle_play(self):
         if self.play_button.isChecked():
             self.play_button.setText("Stop")
-            interval = int(60000 / self.tempo_bpm / self.steps_per_beat)
-            self.timer.start(interval)
-            self.app.start_clock()  # start Clock global
+
+            # Désactivation de l’ancienne clock interne (QTimer)
+            # interval = int(60000 / self.tempo_bpm / self.steps_per_beat)
+            # self.timer.start(interval)
+
+            # Clock globale (Synths_Midi)
+            self.app.start_clock()
+
         else:
             self.play_button.setText("Play")
-            self.timer.stop()
+
+            # self.timer.stop()  # désactivé, clock externe uniquement
+
             self.reset_step_highlight()
-            self.app.stop_clock()   # stop Clock global
+            self.app.stop_clock()
+
 
     def set_tempo(self, bpm):
         self.tempo_bpm = bpm
