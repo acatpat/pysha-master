@@ -77,8 +77,7 @@ class Synths_Midi:
         # mapping instrument -> ports
         self.instrument_midi_ports = {}
 
-        # pyramidi / clock / routing
-        self.pyramid_channel = 15
+
         
         # pour appeler les ports
         self.incoming_midi_callback = None
@@ -303,23 +302,49 @@ class Synths_Midi:
 
 
     # -----------------------------------------------------------
-    # ### BLOCK-SEND SHORTCUTS ###
+    # ### BLOCK-ROUTING SHORTCUTS ###
     # -----------------------------------------------------------
-    def send_note_on(self, instrument_name, note, velocity=100):
-        msg = mido.Message('note_on', note=note, velocity=velocity)
-        self.send(msg, instrument_name=instrument_name)
 
-    def send_note_off(self, instrument_name, note):
-        msg = mido.Message('note_off', note=note, velocity=0)
-        self.send(msg, instrument_name=instrument_name)
+    def send(self, msg, instrument_name=None):
+        """
+        Envoi générique d'un message MIDI :
+        - instrument_name : str = nom court (PRO800, MINITAUR, etc.)
+        - si None → rien n'est envoyé (pas de port global)
+        """
+        if instrument_name is None:
+            return  # pas de fallback global dans ta nouvelle architecture
+
+        ports = self.instrument_midi_ports.get(instrument_name)
+        if not ports:
+            return
+
+        out_port = ports.get("out")
+        if not out_port:
+            return
+
+        try:
+            out_port.send(msg)
+        except Exception:
+            print(f"[MIDI] Failed to send {msg} to {instrument_name}")
+
+    def send_note_on(self, instrument_name, note, velocity=100):
+        self.send(mido.Message("note_on", note=note, velocity=velocity), instrument_name)
+
+    def send_note_off(self, instrument_name, note, velocity=0):
+        self.send(mido.Message("note_off", note=note, velocity=velocity), instrument_name)
 
     def send_cc(self, instrument_name, cc, value):
-        msg = mido.Message('control_change', control=cc, value=value)
-        self.send(msg, instrument_name=instrument_name)
+        self.send(mido.Message("control_change", control=cc, value=value), instrument_name)
 
     def send_program_change(self, instrument_name, program):
-        msg = mido.Message('program_change', program=program)
-        self.send(msg, instrument_name=instrument_name)
+        self.send(mido.Message("program_change", program=program), instrument_name)
+
+    def send_aftertouch(self, instrument_name, value):
+        self.send(mido.Message("aftertouch", value=value), instrument_name)
+
+    def send_pitchbend(self, instrument_name, value):
+        self.send(mido.Message("pitchwheel", pitch=value), instrument_name)
+
 
 
     # -----------------------------------------------------------

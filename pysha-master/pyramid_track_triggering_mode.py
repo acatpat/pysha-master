@@ -43,7 +43,7 @@ class PyramidTrackTriggeringMode(definitions.PyshaMode):
     track_selection_modifier_button = push2_python.constants.BUTTON_MASTER
 
     def initialize(self, settings=None):
-        self.pyramidi_channel = self.app.track_selection_mode.pyramidi_channel  # Note TrackSelectionMode needs to have been initialized before PyramidTrackTriggeringMode
+         # Note TrackSelectionMode needs to have been initialized before PyramidTrackTriggeringMode
         self.create_tracks()
 
     def create_tracks(self):
@@ -60,32 +60,18 @@ class PyramidTrackTriggeringMode(definitions.PyshaMode):
         self.track_states[track_num].is_playing = value
         if send_to_pyramid:
             if value == True:
-                self.send_unmute_track_to_pyramid(track_num)
+                pass
             else:
-                self.send_mute_track_to_pyramid(track_num)
+                pass
 
     def set_track_has_content(self, track_num, value):
         self.track_states[track_num].has_content = value
 
-    def set_pyramidi_channel(self, channel, wrap=False):
-        self.pyramidi_channel = channel
-        if self.pyramidi_channel < 0:
-            self.pyramidi_channel = 0 if not wrap else 15
-        elif self.pyramidi_channel > 15:
-            self.pyramidi_channel = 15 if not wrap else 0
+
 
     def pad_ij_to_track_num(self, pad_ij):
         return pad_ij[0] * 8 + pad_ij[1]
 
-    def send_mute_track_to_pyramid(self, track_num):
-        # Follows pyramidi specification (Pyramid configured to receive on ch 16)
-        msg = mido.Message('control_change', control=track_num + 1, value=0, channel=self.pyramidi_channel)
-        self.app.send_midi_to_pyramid(msg)
-
-    def send_unmute_track_to_pyramid(self, track_num):
-        # Follows pyramidi specification (Pyramid configured to receive on ch 16)
-        msg = mido.Message('control_change', control=track_num + 1, value=1, channel=self.pyramidi_channel)
-        self.app.send_midi_to_pyramid(msg)
 
     def activate(self):
         self.pad_pressing_states = {}

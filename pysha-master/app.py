@@ -112,12 +112,14 @@ class PyshaApp(object):
             step_duration=0.1
         )
 
-        # 1️⃣ Créer la fenêtre séquenceur et lui passer le target
+
         self.sequencer_window = SequencerWindow()
         self.sequencer_window.app = self
         self.sequencer_window.sequencer_target = self.sequencer_target
 
-        # 2️⃣ Créer la fenêtre synth (doit exister avant les presets)
+        self.synths_midi = Synths_Midi()
+
+        
         self.synth_window = SynthWindow(app=self)
         self.synth_window.show()
         self.instrument_midi_ports = self.synth_window.instrument_midi_ports
@@ -144,7 +146,6 @@ class PyshaApp(object):
 
         self.synth_window.instrument_changed.connect(_on_synth_window_selection)
 
-        self.synths_midi = Synths_Midi()
         
         # 3️⃣ Créer le controller
         self.sequencer_controller = SequencerController(
@@ -169,8 +170,7 @@ class PyshaApp(object):
 
         # --- Thread du clock MIDI ---
         self._clock_running = False
-        self._midi_clock_thread = threading.Thread(target=self._clock_loop, daemon=True)
-        self._midi_clock_thread.start()
+
 
 
     def init_modes(self, settings):
@@ -252,8 +252,13 @@ class PyshaApp(object):
             return str(port)
         except:
             return None
+    """""
+    def start_clock(self):
+        self.synths_midi.start_clock()
 
-
+    def stop_clock(self):
+        self.synths_midi.stop_clock()
+    """
 
     def save_preset_auto(self):
         """
@@ -777,7 +782,7 @@ class PyshaApp(object):
             if mode_settings:
                 settings.update(mode_settings)
         json.dump(settings, open('settings.json', 'w'))
-
+    """
     def init_midi_in(self, device_name=None):
         print('Configuring MIDI in to {}...'.format(device_name))
         self.available_midi_in_device_names = [name for name in mido.get_input_names() if 'Ableton Push' not in name and 'RtMidi' not in name and 'Through' not in name]
@@ -869,7 +874,7 @@ class PyshaApp(object):
 
         if self.notes_midi_in is None:
             print('Could not configures notes MIDI input')
-
+    """
     def set_midi_in_channel(self, channel, wrap=False):
         self.midi_in_channel = channel
         if self.midi_in_channel < -1:  # Use "-1" for "all channels"
@@ -884,19 +889,21 @@ class PyshaApp(object):
             self.midi_out_channel = -1 if not wrap else 15
         elif self.midi_out_channel > 15:
             self.midi_out_channel = 15 if not wrap else -1
-
+  
     def set_midi_in_device_by_index(self, device_idx):
-        if device_idx >= 0 and device_idx < len(self.available_midi_in_device_names):
-            self.init_midi_in(self.available_midi_in_device_names[device_idx])
-        else:
-            self.init_midi_in(None)
+        #if device_idx >= 0 and device_idx < len(self.available_midi_in_device_names):
+        #    self.init_midi_in(self.available_midi_in_device_names[device_idx])
+        #else:
+        #    self.init_midi_in(None)
+        pass
 
     def set_midi_out_device_by_index(self, device_idx):
-        if device_idx >= 0 and device_idx < len(self.available_midi_out_device_names):
-            self.init_midi_out(self.available_midi_out_device_names[device_idx])
-        else:
-            self.init_midi_out(None)
-
+        #if device_idx >= 0 and device_idx < len(self.available_midi_out_device_names):
+        #    self.init_midi_out(self.available_midi_out_device_names[device_idx])
+        #else:
+            #self.init_midi_out(None)
+        pass
+    """
     def set_notes_midi_in_device_by_index(self, device_idx):
         if device_idx >= 0 and device_idx < len(self.available_midi_in_device_names):
             self.init_notes_midi_in(self.available_midi_in_device_names[device_idx])
@@ -923,7 +930,7 @@ class PyshaApp(object):
     def send_midi_to_pyramid(self, msg):
         # When sending to Pyramid, don't replace the MIDI channel because msg is already prepared with pyramidi chanel
         self.send_midi(msg, use_original_msg_channel=True)
-
+    """
     def midi_in_handler(self, msg):
         # This will rule out sysex and other "strange" messages that don't have channel info
         if hasattr(msg, 'channel'):

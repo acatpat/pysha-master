@@ -241,6 +241,40 @@ class MelodicMode(definitions.PyshaMode):
 
         self.push.pads.set_pads_color(color_matrix)
 
+    # -----------------------------------------------------------
+    # ### BLOCK-ROUTING ###
+    # -----------------------------------------------------------
+
+    def get_current_instrument(self):
+        return self.app.current_instrument_definition
+
+    def send_note_on_current(self, note, velocity):
+        instr = self.get_current_instrument()
+        if instr:
+            self.app.synths_midi.send_note_on(instr, note, velocity)
+
+    def send_note_off_current(self, note, velocity):
+        instr = self.get_current_instrument()
+        if instr:
+            self.app.synths_midi.send_note_off(instr, note, velocity)
+
+    def send_aftertouch_current(self, note, value, poly=True):
+        instr = self.get_current_instrument()
+        if instr:
+            if poly:
+                self.app.synths_midi.send(
+                    mido.Message("polytouch", note=note, value=value),
+                    instr
+                )
+            else:
+                self.app.synths_midi.send_aftertouch(instr, value)
+
+    def send_pitchbend_current(self, value):
+        instr = self.get_current_instrument()
+        if instr:
+            self.app.synths_midi.send_pitchbend(instr, value)
+
+
     def on_pad_pressed(self, pad_n, pad_ij, velocity):
         midi_note = self.pad_ij_to_midi_note(pad_ij)
         if midi_note is not None:
@@ -365,3 +399,4 @@ class MelodicMode(definitions.PyshaMode):
             self.app.buttons_need_update = True
             self.app.add_display_notification("Touchstrip mode: {0}".format('Modulation wheel' if self.modulation_wheel_mode else 'Pitch bend'))
             return True
+

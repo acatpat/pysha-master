@@ -36,13 +36,12 @@ class TrackSelectionMode(definitions.PyshaMode):
     track_selection_button_a_pressing_time = 0
     selected_track = 0
     track_selection_quick_press_time = 0.400
-    pyramidi_channel = 15
 
     on_track_selected_cb = None
 
     def initialize(self, settings=None):
         if settings is not None:
-            self.pyramidi_channel = settings.get('pyramidi_channel', self.pyramidi_channel)
+            pass
         
         self.create_tracks()
 
@@ -100,15 +99,8 @@ class TrackSelectionMode(definitions.PyshaMode):
 
     def get_settings_to_save(self):
         return {
-            'pyramidi_channel': self.pyramidi_channel,
+            
         }
-
-    def set_pyramidi_channel(self, channel, wrap=False):
-        self.pyramidi_channel = channel
-        if self.pyramidi_channel < 0:
-            self.pyramidi_channel = 0 if not wrap else 15
-        elif self.pyramidi_channel > 15:
-            self.pyramidi_channel = 15 if not wrap else 0
 
     def get_all_distinct_instrument_short_names(self):
         return list(set([track['instrument_short_name'] for track in self.tracks_info]))
@@ -142,17 +134,13 @@ class TrackSelectionMode(definitions.PyshaMode):
         elif self.app.is_mode_active(self.app.rhyhtmic_mode):
             self.app.rhyhtmic_mode.remove_all_notes_being_played()
 
-    def send_select_track_to_pyramid(self, track_idx):
-        # Follows pyramidi specification (Pyramid configured to receive on ch 16)
-        msg = mido.Message('control_change', control=0, value=track_idx + 1, channel=self.pyramidi_channel)
-        self.app.send_midi_to_pyramid(msg)
+
 
     def select_track(self, track_idx):
         # Selects a track and activates its melodic/rhythmic layout
         # Note that if this is called from a mode form the same xor group with melodic/rhythmic modes,
         # that other mode will be deactivated.
         self.selected_track = track_idx
-        self.send_select_track_to_pyramid(self.selected_track)
         self.load_current_default_layout()
         self.clean_currently_notes_being_played()
 

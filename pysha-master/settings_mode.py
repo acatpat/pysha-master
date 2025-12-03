@@ -77,11 +77,7 @@ class SettingsMode(definitions.PyshaMode):
                 self.app.set_midi_out_device_by_index(self.app.midi_out_tmp_device_idx)
                 self.app.midi_out_tmp_device_idx = None
 
-        if self.app.notes_midi_in_tmp_device_idx is not None:
-            # Means we are in the process of changing the notes MIDI in device
-            if current_time - self.encoders_state[push2_python.constants.ENCODER_TRACK6_ENCODER]['last_message_received'] > definitions.DELAYED_ACTIONS_APPLY_TIME:
-                self.app.set_notes_midi_in_device_by_index(self.app.notes_midi_in_tmp_device_idx)
-                self.app.notes_midi_in_tmp_device_idx = None
+
 
     def set_all_upper_row_buttons_off(self):
         self.push.buttons.set_button_color(push2_python.constants.BUTTON_UPPER_ROW_1, definitions.OFF_BTN_COLOR)
@@ -167,11 +163,6 @@ class SettingsMode(definitions.PyshaMode):
                     show_title(ctx, part_x, h, 'cAT END')
                     show_value(ctx, part_x, h, self.app.melodic_mode.channel_at_range_end, color)
 
-                elif i == 4:  # Poly AT range
-                    if self.app.melodic_mode.last_time_at_params_edited is not None:
-                        color = definitions.get_color_rgb_float(definitions.FONT_COLOR_DELAYED_ACTIONS)
-                    show_title(ctx, part_x, h, 'pAT RANGE')
-                    show_value(ctx, part_x, h, self.app.melodic_mode.poly_at_max_range, color)
 
                 elif i == 5:  # Poly AT curve
                     if self.app.melodic_mode.last_time_at_params_edited is not None:
@@ -224,25 +215,8 @@ class SettingsMode(definitions.PyshaMode):
                     show_title(ctx, part_x, h, 'OUT CH')
                     show_value(ctx, part_x, h, self.app.midi_out_channel + 1 if self.app.midi_out_channel >= 0 else 'TR', color)
 
-                elif i == 4:  # Pyramidi out channel
-                    show_title(ctx, part_x, h, 'PYRAMIDI CH')
-                    show_value(ctx, part_x, h, self.app.track_selection_mode.pyramidi_channel + 1, color)
                 
-                elif i == 5:  # Notes MIDI in device
-                    if self.app.notes_midi_in_tmp_device_idx is not None:
-                        color = definitions.get_color_rgb_float(definitions.FONT_COLOR_DELAYED_ACTIONS)
-                        if self.app.notes_midi_in_tmp_device_idx < 0:
-                            name = "None"
-                        else:
-                            name = "{0} {1}".format(self.app.notes_midi_in_tmp_device_idx + 1, self.app.available_midi_in_device_names[self.app.notes_midi_in_tmp_device_idx])
-                    else:
-                        if self.app.notes_midi_in is not None:
-                            name = "{0} {1}".format(self.app.available_midi_in_device_names.index(self.app.notes_midi_in.name) + 1, self.app.notes_midi_in.name)
-                        else:
-                            color = definitions.get_color_rgb_float(definitions.FONT_COLOR_DISABLED)
-                            name = "None"
-                    show_title(ctx, part_x, h, 'NOTES IN')
-                    show_value(ctx, part_x, h, name, color)
+
 
                 elif i == 6:  # Re-send MIDI connection established (to push, not MIDI in/out device)
                     show_title(ctx, part_x, h, 'RESET MIDI')
@@ -437,19 +411,6 @@ class SettingsMode(definitions.PyshaMode):
                 self.app.track_selection_mode.set_pyramidi_channel(self.app.track_selection_mode.pyramidi_channel + 1, wrap=False)
                 return True
 
-            elif button_name == push2_python.constants.BUTTON_UPPER_ROW_6:
-                if self.app.notes_midi_in_tmp_device_idx is None:
-                    if self.app.notes_midi_in is not None:
-                        self.app.notes_midi_in_tmp_device_idx = self.app.available_midi_in_device_names.index(self.app.notes_midi_in.name)
-                    else:
-                        self.app.notes_midi_in_tmp_device_idx = -1
-                self.app.notes_midi_in_tmp_device_idx += 1
-                # Make index position wrap
-                if self.app.notes_midi_in_tmp_device_idx >= len(self.app.available_midi_in_device_names):
-                    self.app.notes_midi_in_tmp_device_idx = -1  # Will use -1 for "None"
-                elif self.app.notes_midi_in_tmp_device_idx < -1:
-                    self.app.notes_midi_in_tmp_device_idx = len(self.app.available_midi_in_device_names) - 1
-                return True
 
             elif button_name == push2_python.constants.BUTTON_UPPER_ROW_7:
                 self.app.on_midi_push_connection_established()

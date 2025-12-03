@@ -25,20 +25,22 @@ class SequencerTarget:
     # PLAY STEP
     # --------------------
     def play_step(self, pad_index, step_index, velocity=100):
-        instrument_name = "DDRM"
+
+        instrument_name = self.app.current_instrument_definition  # le nom court de l’instrument sélectionné
+        if not instrument_name:
+            return
 
         # Vérifier indices
         if 0 <= pad_index < self.num_pads and 0 <= step_index < self.steps_per_pad:
+
             note = self.start_note + pad_index
 
-            # note_on via Synths_Midi
+            # --- Envoi Note On ---
             self.app.synths_midi.send_note_on(instrument_name, note, velocity)
 
-            # timer pour note_off
+            # --- Note Off programmé ---
             def send_note_off():
-                try:
-                    self.app.synths_midi.send_note_off(instrument_name, note)
-                except Exception:
-                    print(f"[MIDI] Failed to send note_off for {instrument_name} pad {pad_index}")
+                self.app.synths_midi.send_note_off(instrument_name, note)
 
             threading.Timer(self.step_duration, send_note_off).start()
+

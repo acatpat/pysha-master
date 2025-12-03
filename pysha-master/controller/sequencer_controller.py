@@ -68,6 +68,53 @@ class SequencerController:
                 self.step_to_push2[step_index] = (row_idx, col_idx)
                 self.step_pitch_to_index[pitch] = step_index
 
+    # -----------------------------------------------------------
+    # ### BLOCK-ROUTING ###
+    # -----------------------------------------------------------
+
+    def get_current_instrument(self):
+        return getattr(self.app, "current_instrument_definition", None)
+
+    def send_note_on_current(self, note, velocity):
+        instr = self.get_current_instrument()
+        if instr:
+            try:
+                self.app.synths_midi.send_note_on(instr, note, velocity)
+            except Exception:
+                pass
+
+    def send_note_off_current(self, note, velocity):
+        instr = self.get_current_instrument()
+        if instr:
+            try:
+                self.app.synths_midi.send_note_off(instr, note, velocity)
+            except Exception:
+                pass
+
+    def send_aftertouch_current(self, note, value, poly=True):
+        instr = self.get_current_instrument()
+        if not instr:
+            return
+        try:
+            if poly:
+                self.app.synths_midi.send(
+                    mido.Message("polytouch", note=note, value=value),
+                    instr
+                )
+            else:
+                self.app.synths_midi.send_aftertouch(instr, value)
+        except Exception:
+            pass
+
+    def send_pitchbend_current(self, value):
+        instr = self.get_current_instrument()
+        if instr:
+            try:
+                self.app.synths_midi.send_pitchbend(instr, value)
+            except Exception:
+                pass
+
+
     # -------------------------------------------------------------------------
     # GESTION DES NOTES (pads/steps)
     # -------------------------------------------------------------------------
