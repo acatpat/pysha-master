@@ -3,7 +3,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLabel, QDial, QComboBox
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSlot
+from PyQt6.QtCore import Qt, pyqtSlot
 
 
 class SequencerWindow(QWidget):
@@ -25,10 +25,7 @@ class SequencerWindow(QWidget):
         # 1/16 par défaut = 4 steps par beat
         self.steps_per_beat = 4
 
-        # Timer de lecture
-        self.timer = QTimer()
-        # Clock interne désactivée (gérée par Synths_Midi)
-        self.timer.timeout.connect(self.advance_step)
+
 
 
         # Dans __init__ ou via setter
@@ -168,9 +165,6 @@ class SequencerWindow(QWidget):
         if self.play_button.isChecked():
             self.play_button.setText("Stop")
 
-            # Désactivation de l’ancienne clock interne (QTimer)
-            # interval = int(60000 / self.tempo_bpm / self.steps_per_beat)
-            # self.timer.start(interval)
 
             # Clock globale (Synths_Midi)
             self.app.start_clock()
@@ -178,7 +172,6 @@ class SequencerWindow(QWidget):
         else:
             self.play_button.setText("Play")
 
-            # self.timer.stop()  # désactivé, clock externe uniquement
 
             self.reset_step_highlight()
             self.app.stop_clock()
@@ -187,9 +180,8 @@ class SequencerWindow(QWidget):
     def set_tempo(self, bpm):
         self.tempo_bpm = bpm
         self.tempo_label.setText(f"{bpm} BPM")
-        if self.timer.isActive():
-            interval = int(60000 / bpm / self.steps_per_beat)
-            self.timer.start(interval)
+        self.app.synths_midi.bpm = new_value
+
 
     @pyqtSlot(int)
     def set_resolution_slot(self, steps_per_beat):
@@ -204,9 +196,7 @@ class SequencerWindow(QWidget):
         for btn, steps in self.reso_buttons:
             btn.setChecked(steps == steps_per_beat)
 
-        if self.timer.isActive():
-            interval = int(60000 / self.tempo_bpm / self.steps_per_beat)
-            self.timer.start(interval)
+
 
 
     def advance_step(self):
