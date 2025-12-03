@@ -256,7 +256,7 @@ class MelodicMode(definitions.PyshaMode):
             selected_instrument = self.app.synth_window._selected_instrument
             midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
             if midi_out_port is not None:
-                midi_out_port.send(msg)
+                self.app.synths_midi.send(msg, instrument_name=selected_instrument)
             else:
                 # fallback sur le port global
                 self.app.send_midi(msg)
@@ -274,7 +274,7 @@ class MelodicMode(definitions.PyshaMode):
             selected_instrument = self.app.synth_window._selected_instrument
             midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
             if midi_out_port is not None:
-                midi_out_port.send(msg)
+                self.app.synths_midi.send(msg, instrument_name=selected_instrument)
             else:
                 # fallback sur le port global
                 self.app.send_midi(msg)
@@ -296,7 +296,7 @@ class MelodicMode(definitions.PyshaMode):
         selected_instrument = self.app.synth_window._selected_instrument
         midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
         if midi_out_port is not None:
-            midi_out_port.send(msg)
+            self.app.synths_midi.send(msg, instrument_name=selected_instrument)
         else:
             # fallback sur le port global
             self.app.send_midi(msg)
@@ -311,7 +311,7 @@ class MelodicMode(definitions.PyshaMode):
         selected_instrument = self.app.synth_window._selected_instrument
         midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
         if midi_out_port is not None:
-            midi_out_port.send(msg)
+            self.app.synths_midi.send(msg, instrument_name=selected_instrument)
         else:
             # fallback sur le port global
             self.app.send_midi(msg)
@@ -323,7 +323,7 @@ class MelodicMode(definitions.PyshaMode):
         selected_instrument = self.app.synth_window._selected_instrument
         midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
         if midi_out_port is not None:
-            midi_out_port.send(msg)
+            self.app.synths_midi.send(msg, instrument_name=selected_instrument)
         else:
             # fallback sur le port global
             self.app.send_midi(msg)

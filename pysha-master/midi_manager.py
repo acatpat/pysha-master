@@ -237,25 +237,24 @@ class Synths_Midi:
 
 
     def assign_instrument_ports(self, instrument_name, in_name, out_name):
-        """Associe un synthé avec ses ports Mido."""
-        if instrument_name not in self.instrument_midi_ports:
-            self.instrument_midi_ports[instrument_name] = {"in": None, "out": None}
+        """
+        Associe un synthé avec ses ports Mido.
+        - instrument_name : nom logique (ex: "PRO800")
+        - in_name / out_name : fragments de nom de port (comme avant)
+        """
+        in_port = None
+        out_port = None
 
-        # --- PHASE IN : ouverture du port IN ---
-        if in_name is not None:
+        if in_name:
             in_port = self.open_in_port(in_name)
-            if in_port is not None:
-                self.instrument_midi_ports[instrument_name]["in"] = in_port
-            else:
-                print(f'Warning: IN port "{in_name}" not assigned for {instrument_name}')
 
-        # --- PHASE OUT (déjà ajouté précédemment, on ne touche pas) ---
-        if out_name is not None:
+        if out_name:
             out_port = self.open_out_port(out_name)
-            if out_port is not None:
-                self.instrument_midi_ports[instrument_name]["out"] = out_port
-            else:
-                print(f'Warning: OUT port "{out_name}" not assigned for {instrument_name}')
+
+        self.instrument_midi_ports[instrument_name] = {
+            "in": in_port,
+            "out": out_port,
+        }
 
 
     # -----------------------------------------------------------
@@ -264,27 +263,43 @@ class Synths_Midi:
     def send(self, msg, instrument_name=None):
         """
         Envoie un message MIDI :
-        - soit vers un instrument (si instrument_name)
-        - soit global (si None)
+        - instrument_name = None      -> pas de routage spécifique (à définir plus tard)
+        - instrument_name = "PRO800"  -> envoi vers cet instrument
+        - instrument_name = ["PRO800", "MINITAUR"] -> multi-cible
         """
 
-        if instrument_name is not None:
-            out_port = self.instrument_midi_ports.get(instrument_name, {}).get("out", None)
-            if out_port is not None:
-                try:
-                    out_port.send(msg)
-                except Exception as e:
-                    print(f"Error sending MIDI to {instrument_name}: {e}")
-            else:
-                print(f"No OUT port for instrument '{instrument_name}'")
+        # Normaliser instrument_name en liste de cibles
+        if instrument_name is None:
+            targets = []
+        elif isinstance(instrument_name, str):
+            targets = [instrument_name]
+        else:
+            # liste / tuple / set ou autre itérable
+            try:
+                targets = list(instrument_name)
+            except TypeError:
+                targets = []
+
+        # Si pas de cible explicite, pour l’instant on ne fait rien
+        # (le comportement "instrument sélectionné" sera géré plus tard par l’appelant)
+        if not targets:
             return
 
-        # Sinon : broadcast
-        for name, port in self.midi_out_ports.items():
+        for instr in targets:
+            ports = self.instrument_midi_ports.get(instr, None)
+            if not ports:
+                print(f'[Synths_Midi] No ports configured for instrument "{instr}"')
+                continue
+
+            out_port = ports.get("out", None)
+            if out_port is None:
+                print(f'[Synths_Midi] No OUT port for instrument "{instr}"')
+                continue
+
             try:
-                port.send(msg)
+                out_port.send(msg)
             except Exception as e:
-                print(f"Error sending MIDI on port '{name}': {e}")
+                print(f'[Synths_Midi] Error sending to "{instr}": {e}')
 
 
     # -----------------------------------------------------------
@@ -292,19 +307,19 @@ class Synths_Midi:
     # -----------------------------------------------------------
     def send_note_on(self, instrument_name, note, velocity=100):
         msg = mido.Message('note_on', note=note, velocity=velocity)
-        self.send(msg, instrument_name)
+        self.send(msg, instrument_name=instrument_name)
 
     def send_note_off(self, instrument_name, note):
-        msg = mido.Message('note_off', note=note)
-        self.send(msg, instrument_name)
+        msg = mido.Message('note_off', note=note, velocity=0)
+        self.send(msg, instrument_name=instrument_name)
 
     def send_cc(self, instrument_name, cc, value):
         msg = mido.Message('control_change', control=cc, value=value)
-        self.send(msg, instrument_name)
+        self.send(msg, instrument_name=instrument_name)
 
     def send_program_change(self, instrument_name, program):
         msg = mido.Message('program_change', program=program)
-        self.send(msg, instrument_name)
+        self.send(msg, instrument_name=instrument_name)
 
 
     # -----------------------------------------------------------

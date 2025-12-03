@@ -161,7 +161,8 @@ class MIDICCMode(PyshaMode):
         if hasattr(msg, 'channel'):
             msg = msg.copy(channel=midi_channel - 1)  # Mido 0-indexed
 
-        midi_out_port.send(msg)
+        self.app.synths_midi.send(msg, instrument_name=instrument_name)
+
 
     # -----------------------
     # Fonctions helpers existantes

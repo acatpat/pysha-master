@@ -111,14 +111,18 @@ class PresetSelectionMode(definitions.PyshaMode):
         return (preset_num, bank_num)
 
     def send_select_new_preset(self, preset_num):
-        msg = mido.Message('program_change', program=preset_num)  # Should this be 1-indexed?
-        self.app.send_midi(msg)
+        instrument_name = self.app.track_selection_mode.get_current_track_instrument_short_name()
+        msg = mido.Message('program_change', program=preset_num)
+        self.app.synths_midi.send(msg, instrument_name=instrument_name)
+
 
     def send_select_new_bank(self, bank_num):
         # If synth only has 1 bank, don't send bank change messages
         if self.get_num_banks() > 1:
-            msg = mido.Message('control_change', control=0, value=bank_num)  # Should this be 1-indexed?
-            self.app.send_midi(msg)
+            instrument_name = self.app.track_selection_mode.get_current_track_instrument_short_name()
+            msg = mido.Message('control_change', control=0, value=bank_num)
+            self.app.synths_midi.send(msg, instrument_name=instrument_name)
+
 
     def notify_status_in_display(self):
         bank_number = self.get_current_page() // 2 + 1

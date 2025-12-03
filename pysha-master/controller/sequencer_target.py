@@ -25,28 +25,20 @@ class SequencerTarget:
     # PLAY STEP
     # --------------------
     def play_step(self, pad_index, step_index, velocity=100):
-        # Récupérer le port actuel de DDRM depuis l'app
-        instrument_ports = getattr(self.app, 'instrument_midi_ports', {}).get("DDRM")
-        if not instrument_ports:
-            return
-
-        midi_out_port = instrument_ports.get("out")
-        if not midi_out_port:
-            return  # pas de port actif
+        instrument_name = "DDRM"
 
         # Vérifier indices
         if 0 <= pad_index < self.num_pads and 0 <= step_index < self.steps_per_pad:
             note = self.start_note + pad_index
-            try:
-                midi_out_port.send(mido.Message('note_on', note=note, velocity=velocity))
-            except IOError:
-                print(f"[MIDI] Failed to send note_on for DDRM pad {pad_index}")
 
+            # note_on via Synths_Midi
+            self.app.synths_midi.send_note_on(instrument_name, note, velocity)
+
+            # timer pour note_off
             def send_note_off():
                 try:
-                    midi_out_port.send(mido.Message('note_off', note=note, velocity=0))
-                except IOError:
-                    print(f"[MIDI] Failed to send note_off for DDRM pad {pad_index}")
+                    self.app.synths_midi.send_note_off(instrument_name, note)
+                except Exception:
+                    print(f"[MIDI] Failed to send note_off for {instrument_name} pad {pad_index}")
 
-            import threading
             threading.Timer(self.step_duration, send_note_off).start()

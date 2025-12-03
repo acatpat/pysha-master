@@ -35,6 +35,7 @@ class SequencerWindow(QWidget):
         self.sequencer_target = None  # sera assigné depuis l'extérieur
 
 
+
         self.build_ui()
 
     # -------------------------------------------------------------
