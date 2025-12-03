@@ -154,11 +154,11 @@ class PyshaApp(object):
             sequencer_window=self.sequencer_window
         )
 
+        self.synths_midi.clock_tick_callback = self.sequencer_controller.tick_from_clock_thread
+
         # Lier Synths_Midi à l’App
         self.synths_midi.incoming_midi_callback = self.midi_in_handler
 
-        # après avoir créé self.sequencer_controller et self.synths_midi
-        self.synths_midi.clock_tick_callback = self.sequencer_controller.tick_from_clock_thread
 
 
 
@@ -252,13 +252,13 @@ class PyshaApp(object):
             return str(port)
         except:
             return None
-    """""
+        
     def start_clock(self):
-        self.synths_midi.start_clock()
+        self.synths_midi.start_clock(lambda: self.sequencer_window.tempo_bpm)
 
     def stop_clock(self):
         self.synths_midi.stop_clock()
-    """
+
 
     def save_preset_auto(self):
         """

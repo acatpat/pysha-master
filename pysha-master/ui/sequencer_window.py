@@ -28,7 +28,7 @@ class SequencerWindow(QWidget):
         # Timer de lecture
         self.timer = QTimer()
         # Clock interne désactivée (gérée par Synths_Midi)
-        # self.timer.timeout.connect(self.advance_step)
+        self.timer.timeout.connect(self.advance_step)
 
 
         # Dans __init__ ou via setter
