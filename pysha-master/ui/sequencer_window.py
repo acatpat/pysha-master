@@ -25,13 +25,9 @@ class SequencerWindow(QWidget):
         # 1/16 par défaut = 4 steps par beat
         self.steps_per_beat = 4
 
-
-
-
-        # Dans __init__ ou via setter
+        # Références externes (raccordées depuis app.py)
         self.sequencer_target = None  # sera assigné depuis l'extérieur
-
-
+        # self.app sera typiquement assigné depuis PyshaApp : window.app = self
 
         self.build_ui()
 
@@ -77,8 +73,6 @@ class SequencerWindow(QWidget):
         self.preset_combo.setFixedWidth(200)
         preset_layout.addWidget(self.preset_combo)
 
-
-
         self.btn_preset_save = QPushButton("Save Preset")
         self.btn_preset_save.clicked.connect(self.on_save_preset)
         preset_layout.addWidget(self.btn_preset_save)
@@ -86,7 +80,6 @@ class SequencerWindow(QWidget):
         self.btn_preset_load = QPushButton("Load Preset")
         self.btn_preset_load.clicked.connect(self.on_load_preset)
         preset_layout.addWidget(self.btn_preset_load)
-
 
         #
         # --- Sélecteur de résolution ---
@@ -100,7 +93,8 @@ class SequencerWindow(QWidget):
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setFixedWidth(50)
-            btn.clicked.connect(lambda checked, s=steps: self.set_resolution(s))
+            # Pour l'instant, on garde l'appel direct à set_resolution (UI).
+            btn.clicked.connect(lambda checked, s=steps: self.on_resolution_button(s))
             self.reso_buttons.append((btn, steps))
             resolution_layout.addWidget(btn)
 
@@ -124,6 +118,7 @@ class SequencerWindow(QWidget):
             b = QPushButton(str(i + 1))
             b.setCheckable(True)
             b.setFixedSize(40, 40)
+            # On garde l'appel vers toggle_step, qui sera maintenant un simple wrapper vers le controller
             b.clicked.connect(lambda checked, idx=i: self.toggle_step(idx))
             self.step_buttons.append(b)
             self.steps_grid.addWidget(b, i // 16, i % 16)
@@ -139,6 +134,7 @@ class SequencerWindow(QWidget):
             b = QPushButton(f"Pad {i+1}")
             b.setCheckable(True)
             b.setFixedSize(70, 70)
+            # La sélection de pad reste une logique purement UI
             b.clicked.connect(lambda checked, idx=i: self.select_pad(idx))
             self.pad_buttons.append(b)
             pads_layout.addWidget(b, i // 4, i % 4)
@@ -153,7 +149,7 @@ class SequencerWindow(QWidget):
     def toggle_play_slot(self):
         print("[SEQ UI] toggle_play_slot called (thread-safe)")
 
-        # ⬅️ CORRECTION : inversion propre de l'état du bouton
+        # Inversion propre de l'état du bouton
         current = self.play_button.isChecked()
         self.play_button.setChecked(not current)
 
@@ -161,27 +157,33 @@ class SequencerWindow(QWidget):
         self.toggle_play()
 
 
+
     def toggle_play(self):
         if self.play_button.isChecked():
             self.play_button.setText("Stop")
-
-
             # Clock globale (Synths_Midi)
-            self.app.start_clock()
-
+            if hasattr(self, "app"):
+                self.app.start_clock()
         else:
             self.play_button.setText("Play")
-
-
             self.reset_step_highlight()
-            self.app.stop_clock()
-
+            if hasattr(self, "app"):
+                self.app.stop_clock()
 
     def set_tempo(self, bpm):
+        """
+        Appelée par le QDial.
+        UI + notification vers le SequencerController,
+        qui lui-même met à jour Synths_Midi.bpm.
+        """
         self.tempo_bpm = bpm
         self.tempo_label.setText(f"{bpm} BPM")
-        self.app.synths_midi.bpm = new_value
 
+        if hasattr(self, "app") and hasattr(self.app, "sequencer_controller"):
+            try:
+                self.app.sequencer_controller.set_tempo(bpm)
+            except Exception:
+                pass
 
     @pyqtSlot(int)
     def set_resolution_slot(self, steps_per_beat):
@@ -189,6 +191,10 @@ class SequencerWindow(QWidget):
         self.set_resolution(steps_per_beat)
 
     def set_resolution(self, steps_per_beat):
+        """
+        Mise à jour purement visuelle de la résolution dans la fenêtre.
+        La logique de timing (ticks_per_step) est gérée dans SequencerController._set_resolution.
+        """
         print(f"[SEQ UI] set_resolution: {steps_per_beat}")
         self.steps_per_beat = steps_per_beat
 
@@ -196,25 +202,52 @@ class SequencerWindow(QWidget):
         for btn, steps in self.reso_buttons:
             btn.setChecked(steps == steps_per_beat)
 
+    def on_resolution_button(self, steps_per_beat):
+        """
+        UI → Controller : bouton de résolution pressé
+        1) UI met à jour l'affichage (SéquenceWindow.set_resolution)
+        2) Controller reçoit la vraie résolution via _set_resolution
+        """
+        # 1. Mise à jour visuelle
+        self.set_resolution(steps_per_beat)
+
+        # 2. Envoi de la résolution au contrôleur (logique de timing)
+        if hasattr(self, "app") and hasattr(self.app, "sequencer_controller"):
+            try:
+                self.app.sequencer_controller._set_resolution(steps_per_beat)
+            except Exception:
+                pass
 
 
-
+    # -------------------------------------------------------------
+    # Ces deux fonctions ne portent plus la logique de séquenceur :
+    # elles délèguent maintenant au SequencerController.
+    # -------------------------------------------------------------
     def advance_step(self):
-        self.highlight_step(self.current_step, False)
-        
-        # nombre de steps = longueur d'un pad
-        num_steps = len(self.steps[self.selected_pad])
-        self.current_step = (self.current_step + 1) % num_steps
-        
-        self.highlight_step(self.current_step, True)
+        """
+        Compatibilité : si quelqu'un appelle encore SequencerWindow.advance_step(),
+        on route vers SequencerController.advance_step().
+        """
+        if hasattr(self, "app") and hasattr(self.app, "sequencer_controller"):
+            try:
+                self.app.sequencer_controller.advance_step()
+            except Exception:
+                pass
 
-        # Jouer les notes actives pour ce step
-        if self.sequencer_target:
-            for pad_index, pad_steps in enumerate(self.steps):
-                if pad_steps[self.current_step]:
-                    self.sequencer_target.play_step(pad_index, self.current_step)
+    def toggle_step(self, step_index):
+        """
+        Compatibilité : route le toggle d'un step vers SequencerController._toggle_step().
+        La logique de steps (model, sequencer_target, Push) est dans le controller.
+        """
+        if hasattr(self, "app") and hasattr(self.app, "sequencer_controller"):
+            try:
+                self.app.sequencer_controller._toggle_step(step_index)
+            except Exception:
+                pass
 
-
+    # -------------------------------------------------------------
+    # UI highlight
+    # -------------------------------------------------------------
     def highlight_step(self, step, on):
         b = self.step_buttons[step]
         if on:
@@ -228,7 +261,7 @@ class SequencerWindow(QWidget):
         self.current_step = 0
 
     # -------------------------------------------------------------
-    # Logique Steps / Pads
+    # Logique Steps / Pads (UI uniquement)
     # -------------------------------------------------------------
     def select_pad(self, pad_index):
         self.selected_pad = pad_index
@@ -238,15 +271,6 @@ class SequencerWindow(QWidget):
     def update_pad_display(self):
         for i, b in enumerate(self.pad_buttons):
             b.setChecked(i == self.selected_pad)
-
-    def toggle_step(self, step_index):
-        pad = self.selected_pad
-        self.steps[pad][step_index] = not self.steps[pad][step_index]
-        self.update_steps_display()
-
-        if self.sequencer_target:
-            self.sequencer_target.set_step_state(pad, step_index, self.steps[pad][step_index])
-
 
     def update_steps_display(self):
         pad = self.selected_pad
@@ -277,6 +301,9 @@ class SequencerWindow(QWidget):
         """
         self.update_steps_display()
 
+    # -------------------------------------------------------------
+    # PRESETS
+    # -------------------------------------------------------------
     def refresh_preset_list(self):
         if not hasattr(self, "app") or not hasattr(self.app, "list_presets"):
             return
@@ -286,7 +313,6 @@ class SequencerWindow(QWidget):
         for p in presets:
             name = os.path.basename(p)
             self.preset_combo.addItem(name, p)
-
 
     def on_save_preset(self):
         if not hasattr(self, "app") or not hasattr(self.app, "save_preset_auto"):
@@ -299,7 +325,6 @@ class SequencerWindow(QWidget):
         idx = self.preset_combo.findText(base)
         if idx >= 0:
             self.preset_combo.setCurrentIndex(idx)
-
 
     def on_load_preset(self):
         if not hasattr(self.app, "synth_window") or self.app.synth_window is None:

@@ -351,11 +351,13 @@ class Synths_Midi:
 
 
     # --------------------------
-    # MIDI Clock global (délégué à Synths_Midi)
+    # MIDI Clock global
     # --------------------------
     def start_clock(self):
         """Démarre la clock interne."""
-        if not getattr(self, "_clock_thread_running", False):
+        print("[CLOCK] start_clock() called")
+
+        if self._clock_thread is None or not self._clock_thread_running:
             self._clock_thread_running = True
             self._clock_thread = threading.Thread(
                 target=self._clock_thread_loop,
@@ -363,7 +365,7 @@ class Synths_Midi:
             )
             self._clock_thread.start()
 
-        # message START pour les synthés
+        # Optionnel : message START pour les synthés
         try:
             start_msg = mido.Message("start")
             self._send_clock_message_to_outputs(start_msg)
@@ -375,14 +377,13 @@ class Synths_Midi:
         Boucle interne :
         - envoie la clock MIDI (24ppqn) vers les sorties activées
         - notifie le séquenceur via clock_tick_callback
-        - applique clock_factor uniquement pour le séquenceur
         """
+        print("[CLOCK] clock thread started")
         next_tick_time = time.perf_counter()
 
-        while getattr(self, "_clock_thread_running", False):
-
+        while self._clock_thread_running:
             # Intervalle entre deux ticks MIDI
-            seconds_per_quarter = 60.0 / self.bpm
+            seconds_per_quarter = 60.0 / float(self.bpm)
             tick_interval = seconds_per_quarter / 24.0
 
             now = time.perf_counter()
@@ -391,7 +392,7 @@ class Synths_Midi:
 
                 # 1) envoyer clock (0xF8)
                 try:
-                    clk_msg = mido.Message('clock')
+                    clk_msg = mido.Message("clock")
                     self._send_clock_message_to_outputs(clk_msg)
                 except Exception:
                     pass
@@ -405,16 +406,16 @@ class Synths_Midi:
 
             time.sleep(0.0005)
 
-
+        print("[CLOCK] clock thread stopped")
 
     def stop_clock(self):
-        """
-        Stoppe la clock interne de Synths_Midi et envoie Stop aux synthés.
-        """
+        """Stoppe la clock interne."""
+        print("[CLOCK] stop_clock() called")
+        self._clock_thread_running = False
+
+        # Optionnel : message STOP pour les synthés
         try:
-            self.send_stop_to_all_instruments()
+            stop_msg = mido.Message("stop")
+            self._send_clock_message_to_outputs(stop_msg)
         except Exception:
             pass
-
-        if hasattr(self, "synths_midi"):
-            self.synths_midi.stop_clock()

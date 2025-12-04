@@ -168,8 +168,7 @@ class PyshaApp(object):
         # Lier le controller de séquenceur à RhythmicMode
         self.rhyhtmic_mode.sequencer_controller = self.sequencer_controller
 
-        # --- Thread du clock MIDI ---
-        self._clock_running = False
+
 
 
 
@@ -253,11 +252,8 @@ class PyshaApp(object):
         except:
             return None
         
-    def start_clock(self):
-        self.synths_midi.start_clock(lambda: self.sequencer_window.tempo_bpm)
 
-    def stop_clock(self):
-        self.synths_midi.stop_clock()
+
 
 
     def save_preset_auto(self):
@@ -456,13 +452,22 @@ class PyshaApp(object):
         self.sequencer_window.update_pad_display()
         self.sequencer_window.update_steps_display()
 
-        # Réajuster le timer si le séquenceur est en lecture
-        if self.sequencer_window.timer.isActive():
-            interval = int(60000 / self.sequencer_window.tempo_bpm / self.sequencer_window.steps_per_beat)
-            self.sequencer_window.timer.start(interval)
+    def start_clock(self):
+        self.synths_midi.start_clock()
+        print("[DEBUG] callback au start =", self.synths_midi.clock_tick_callback)
 
-        print(f"[PRESET] Sequencer restored: pad {self.sequencer_window.selected_pad}, "
-            f"{self.sequencer_window.steps_per_beat} steps per beat, tempo {self.sequencer_window.tempo_bpm} BPM")
+
+    def stop_clock(self):
+        self.synths_midi.stop_clock()
+        print("[DEBUG] callback après stop =", self.synths_midi.clock_tick_callback)
+
+
+        # Reset du sequencer après arrêt clock
+        if hasattr(self, "sequencer_controller"):
+            try:
+                self.sequencer_controller.reset_after_stop()
+            except Exception:
+                pass
 
 
     from controller.sequencer_controller import SequencerController
@@ -524,121 +529,7 @@ class PyshaApp(object):
         return self.midi_in_handler(msg)
 
 
-    """"
-    def start_midi_clock(self):
 
-
-
-
-        self._clock_running = False  # Flag pour contrôler l’envoi
-        self._midi_clock_thread = threading.Thread(target=self._clock_loop, daemon=True)
-        self._midi_clock_thread.start()
-
-
-    def _clock_loop(self):
-        last_time = time.perf_counter()
-        pulse_count = 0
-
-
-        while True:
-            if getattr(self, "_clock_running", False):
-                bpm = float(getattr(self.sequencer_window, 'tempo_bpm', 120))
-                interval = 60 / (bpm * 24)  # 24 pulses par beat
-                now = time.perf_counter()
-                elapsed = now - last_time
-                if elapsed >= interval:
-                    # envoyer un pulse
-                    for track in self.track_selection_mode.tracks_info:
-                        instr_name = track['instrument_short_name']
-                        midi_port = self.synth_window.instrument_midi_ports.get(instr_name, {}).get("out", None)
-                        if midi_port:
-                            try:
-                                midi_port.send(mido.Message('clock'))
-                                # --- synchronisation unique du sequencer sur l’horloge MIDI ---
-                                if pulse_count % 24 == 0:  # un beat complet
-                                    try:
-                                        self.sequencer_controller.tick_from_clock_thread()
-                                    except Exception:
-                                        pass
-                                # --- fin ajout ---
-
-                            except Exception:
-                                pass
-                    last_time += interval
-                    pulse_count += 1
-            else:
-                last_time = time.perf_counter()  # reset temps si stop
-
-            time.sleep(0.001)  # sleep court pour ne pas bloquer CPU
-
-
-    def start_clock(self):
-
-        self._clock_running = True
-        self.send_start_to_all_instruments()
-
-    def stop_clock(self):
- 
-        self._clock_running = False
-        self.send_stop_to_all_instruments()
-
-    def continue_clock(self):
-
-        self._clock_running = True
-        self.send_continue_to_all_instruments()            
-
-    def send_start_to_all_instruments(self):
- 
-        for track in self.track_selection_mode.tracks_info:
-            midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
-            if midi_port:
-                try:
-                    midi_port.send(mido.Message('start'))
-                except Exception:
-                    pass
-
-    def send_stop_to_all_instruments(self):
-
-        for track in self.track_selection_mode.tracks_info:
-            midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
-            if midi_port:
-                try:
-                    midi_port.send(mido.Message('stop'))
-                except Exception:
-                    pass
-
-    def send_continue_to_all_instruments(self):
-
-        for track in self.track_selection_mode.tracks_info:
-            midi_port = self.synth_window.instrument_midi_ports.get(track['instrument_short_name'], {}).get("out", None)
-            if midi_port:
-                try:
-                    midi_port.send(mido.Message('continue'))
-                except Exception:
-                    pass
-    """
-    # -----------------------------------------------------------
-    # ### BLOCK-MASTER-CLOCK ###
-    # -----------------------------------------------------------
-    def start_clock(self):
-        """
-        Démarre la clock interne via Synths_Midi.
-        Respecte strictement la structure du séquenceur :
-        - start_clock() est appelée par SequencerWindow.toggle_play()
-        - Synths_Midi.start_clock() gère thread + MIDI START
-        """
-        if hasattr(self, "synths_midi") and self.synths_midi is not None:
-            self.sequencer_controller.current_step = 0  # RESET demande explicite : reset à START
-            self.synths_midi.start_clock()
-
-    def stop_clock(self):
-        """
-        Stoppe la clock interne via Synths_Midi.
-        - stop_clock() est appelée par SequencerWindow.toggle_play()
-        - Synths_Midi.stop_clock() gère thread + MIDI STOP
-        """
-        if hasattr(self, "synths_midi") and self.synths_midi is not None:
-            self.synths_midi.stop_clock()
 
 
 
