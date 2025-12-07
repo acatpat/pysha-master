@@ -49,6 +49,19 @@ class SequencerController:
         # Initialisation pads/steps
         self._init_default_mapping()
 
+    def on_first_clock_tick(self):
+        """
+        Appelé uniquement au tout premier tick clock après START.
+        Force l’envoi du tout premier step (step 0).
+        """
+        try:
+            self.current_step = 0
+            instrument = getattr(self.app.sequencer_window, "sequencer_output_instrument", None)
+            self.play_step(instrument, 0)
+        except Exception as e:
+            print("[SEQ] Error in on_first_clock_tick:", e)
+
+
     def set_tempo(self, bpm):
         """Synchronise le tempo entre UI et Synths_Midi."""
         try:

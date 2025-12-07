@@ -101,6 +101,7 @@ class Synths_Midi:
         self.clock_factor = 1.0          # x0.5, x1, x2, etc. pour le séquenceur
         self._clock_thread = None
         self._clock_thread_running = False
+        self._await_first_tick = False  # ← nouveau flag pour le tout premier tick
         self._clock_out_ports = set()    # noms logiques (les mêmes que pour open_out_port)
         self._seq_tick_accumulator = 0.0
 
@@ -461,6 +462,10 @@ class Synths_Midi:
         """Démarre la clock interne."""
         print("[CLOCK] start_clock() called")
 
+        # Flag pour forcer le premier step immédiatement après START
+        self._await_first_tick = True
+
+        # Démarrage du thread clock si pas déjà actif
         if self._clock_thread is None or not self._clock_thread_running:
             self._clock_thread_running = True
             self._clock_thread = threading.Thread(
@@ -469,7 +474,7 @@ class Synths_Midi:
             )
             self._clock_thread.start()
 
-        # Optionnel : message START pour les synthés
+        # Envoi START (mais pas à l'instrument du séquenceur)
         try:
             start_msg = mido.Message("start")
             self._send_clock_message_to_outputs(start_msg)
@@ -500,6 +505,19 @@ class Synths_Midi:
                     self._send_clock_message_to_outputs(clk_msg)
                 except Exception:
                     pass
+
+                # --- 1bis : jouer immédiatement le step 0 au tout premier tick ---
+                if self._await_first_tick:
+                    self._await_first_tick = False
+                    try:
+                        if (
+                            hasattr(self.app, "sequencer_controller")
+                            and hasattr(self.app.sequencer_controller, "on_first_clock_tick")
+                        ):
+                            self.app.sequencer_controller.on_first_clock_tick()
+                    except Exception as e:
+                        print("[CLOCK] Error in on_first_clock_tick:", e)
+
 
                 # 2) notifier séquenceur
                 if self.clock_tick_callback is not None:
