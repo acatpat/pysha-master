@@ -309,49 +309,6 @@ class Synths_Midi:
 
 
 
-    # -----------------------------------------------------------
-    # ### BLOCK-SEND GENERIC ###
-    # -----------------------------------------------------------
-    def send(self, msg, instrument_name=None):
-        """
-        Envoie un message MIDI :
-        - instrument_name = None      -> pas de routage spécifique (à définir plus tard)
-        - instrument_name = "PRO800"  -> envoi vers cet instrument
-        - instrument_name = ["PRO800", "MINITAUR"] -> multi-cible
-        """
-
-        # Normaliser instrument_name en liste de cibles
-        if instrument_name is None:
-            targets = []
-        elif isinstance(instrument_name, str):
-            targets = [instrument_name]
-        else:
-            # liste / tuple / set ou autre itérable
-            try:
-                targets = list(instrument_name)
-            except TypeError:
-                targets = []
-
-        # Si pas de cible explicite, pour l’instant on ne fait rien
-        # (le comportement "instrument sélectionné" sera géré plus tard par l’appelant)
-        if not targets:
-            return
-
-        for instr in targets:
-            ports = self.instrument_midi_ports.get(instr, None)
-            if not ports:
-                print(f'[Synths_Midi] No ports configured for instrument "{instr}"')
-                continue
-
-            out_port = ports.get("out", None)
-            if out_port is None:
-                print(f'[Synths_Midi] No OUT port for instrument "{instr}"')
-                continue
-
-            try:
-                out_port.send(msg)
-            except Exception as e:
-                print(f'[Synths_Midi] Error sending to "{instr}": {e}')
 
 
     # -----------------------------------------------------------
@@ -360,25 +317,42 @@ class Synths_Midi:
 
     def send(self, msg, instrument_name=None):
         """
-        Envoi générique d'un message MIDI :
-        - instrument_name : str = nom court (PRO800, MINITAUR, etc.)
-        - si None → rien n'est envoyé (pas de port global)
+        Envoi MIDI unifié :
+        - instrument_name = None -> rien
+        - instrument_name = "DDRM" -> mono-cible
+        - instrument_name = ["DDRM", "PRO800"] -> multi-cible
         """
+
+        # --- Normalisation en liste ---
         if instrument_name is None:
-            return  # pas de fallback global dans ta nouvelle architecture
+            return  # pas de port global
 
-        ports = self.instrument_midi_ports.get(instrument_name)
-        if not ports:
-            return
+        if isinstance(instrument_name, str):
+            targets = [instrument_name]
+        else:
+            # liste / set / tuple
+            try:
+                targets = list(instrument_name)
+            except TypeError:
+                return
 
-        out_port = ports.get("out")
-        if not out_port:
-            return
+        # --- Pour chaque instrument cible ---
+        for instr in targets:
+            ports = self.instrument_midi_ports.get(instr)
+            if not ports:
+                print(f"[MIDI] No ports configured for '{instr}'")
+                continue
 
-        try:
-            out_port.send(msg)
-        except Exception:
-            print(f"[MIDI] Failed to send {msg} to {instrument_name}")
+            out_port = ports.get("out")
+            if not out_port:
+                print(f"[MIDI] No OUT port for '{instr}'")
+                continue
+
+            try:
+                out_port.send(msg)
+            except Exception as e:
+                print(f"[MIDI] Failed to send {msg} to {instr}: {e}")
+
 
     def send_note_on(self, instrument_name, note, velocity=100):
         self.send(mido.Message("note_on", note=note, velocity=velocity), instrument_name)

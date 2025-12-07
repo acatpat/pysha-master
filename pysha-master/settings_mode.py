@@ -72,11 +72,43 @@ class SettingsMode(definitions.PyshaMode):
                 self.app.midi_in_tmp_device_idx = None
         
         if self.app.midi_out_tmp_device_idx is not None:
+            
             # Means we are in the process of changing the MIDI out device
             if current_time - self.encoders_state[push2_python.constants.ENCODER_TRACK3_ENCODER]['last_message_received'] > definitions.DELAYED_ACTIONS_APPLY_TIME:
                 self.app.set_midi_out_device_by_index(self.app.midi_out_tmp_device_idx)
                 self.app.midi_out_tmp_device_idx = None
 
+        # --- APPLY INSTRUMENT MIDI OUT CHANGE (nouveau système) ---
+        if hasattr(self, "instrument_out_tmp_idx") and self.instrument_out_tmp_idx is not None:
+
+            instr = self.app.track_selection_mode.get_current_track_info()['instrument_short_name']
+
+            available = [
+                n for n in self.app.synths_midi.scan_available_ports()["out"]
+                if "Ableton Push" not in n
+                and "RtMidi" not in n
+                and "Through" not in n
+            ]
+
+            # Convert index → nom port
+            if self.instrument_out_tmp_idx < 0:
+                out_name = None
+            else:
+                out_name = available[self.instrument_out_tmp_idx]
+
+            # Conserver IN existant
+            old_in = self.app.synths_midi.instrument_midi_ports.get(instr, {}).get("in")
+            in_name = old_in.name if old_in else None
+
+            # Appliquer changement
+            self.app.synths_midi.assign_instrument_ports(instr, in_name, out_name)
+
+            # Sync avec SynthWindow
+            if instr in self.app.synth_window.instrument_midi_ports:
+                self.app.synth_window.instrument_midi_ports[instr]["out"] = out_name
+
+            # Reset
+            self.instrument_out_tmp_idx = None
 
 
     def set_all_upper_row_buttons_off(self):
@@ -193,21 +225,45 @@ class SettingsMode(definitions.PyshaMode):
                     show_title(ctx, part_x, h, 'IN CH')
                     show_value(ctx, part_x, h, self.app.midi_in_channel + 1 if self.app.midi_in_channel > -1 else "All", color)
 
-                elif i == 2:  # MIDI out device
-                    if self.app.midi_out_tmp_device_idx is not None:
+                elif i == 2:  # MIDI OUT (par instrument)
+                    # Instrument sélectionné dans TrackSelectionMode
+                    instr = self.app.track_selection_mode.get_current_track_info()['instrument_short_name']
+
+                    # Ports instrument
+                    ports = self.app.synths_midi.instrument_midi_ports.get(instr, {})
+                    current_port = ports.get("out")
+
+                    # Ports disponibles filtrés
+                    available = [
+                        n for n in self.app.synths_midi.scan_available_ports()["out"]
+                        if "Ableton Push" not in n
+                        and "RtMidi" not in n
+                        and "Through" not in n
+                    ]
+
+                    # Index actif
+                    if hasattr(self, "instrument_out_tmp_idx"):
+                        idx = self.instrument_out_tmp_idx
                         color = definitions.get_color_rgb_float(definitions.FONT_COLOR_DELAYED_ACTIONS)
-                        if self.app.midi_out_tmp_device_idx < 0:
-                            name = "None"
-                        else:
-                            name = "{0} {1}".format(self.app.midi_out_tmp_device_idx + 1, self.app.available_midi_out_device_names[self.app.midi_out_tmp_device_idx])
+                        name = "None" if idx < 0 else f"{idx+1} {available[idx]}"
                     else:
-                        if self.app.midi_out is not None:
-                            name = "{0} {1}".format(self.app.available_midi_out_device_names.index(self.app.midi_out.name) + 1, self.app.midi_out.name)
-                        else:
+                        if current_port is None:
+                            idx = -1
                             color = definitions.get_color_rgb_float(definitions.FONT_COLOR_DISABLED)
                             name = "None"
+                        else:
+                            # Trouver l'index du nom du port
+                            try:
+                                idx = available.index(current_port.name)
+                                name = f"{idx+1} {current_port.name}"
+                            except:
+                                idx = -1
+                                color = definitions.get_color_rgb_float(definitions.FONT_COLOR_DISABLED)
+                                name = "None"
+
                     show_title(ctx, part_x, h, 'OUT DEVICE')
                     show_value(ctx, part_x, h, name, color)
+
 
                 elif i == 3:  # MIDI out channel
                     if self.app.midi_out is None:
@@ -291,7 +347,36 @@ class SettingsMode(definitions.PyshaMode):
                 self.app.melodic_mode.set_lumi_pressure_mode()
 
             elif encoder_name == push2_python.constants.ENCODER_TRACK3_ENCODER:
-                self.app.melodic_mode.set_channel_at_range_start(self.app.melodic_mode.channel_at_range_start + increment)
+                # Instrument sélectionné
+                instr = self.app.track_selection_mode.get_current_track_info()['instrument_short_name']
+
+                # Ports disponibles filtrés
+                available = [
+                    n for n in self.app.synths_midi.scan_available_ports()["out"]
+                    if "Ableton Push" not in n
+                    and "RtMidi" not in n
+                    and "Through" not in n
+                ]
+
+                # Initialisation index temp
+                if not hasattr(self, "instrument_out_tmp_idx") or self.instrument_out_tmp_idx is None:
+                    ports = self.app.synths_midi.instrument_midi_ports.get(instr, {})
+                    current = ports.get("out")
+                    try:
+                        self.instrument_out_tmp_idx = available.index(current.name)
+                    except:
+                        self.instrument_out_tmp_idx = -1
+
+                # Changement index
+                self.instrument_out_tmp_idx += increment
+
+                # Limites
+                if self.instrument_out_tmp_idx >= len(available):
+                    self.instrument_out_tmp_idx = len(available) - 1
+                elif self.instrument_out_tmp_idx < -1:
+                    self.instrument_out_tmp_idx = -1
+
+                return True
 
             elif encoder_name == push2_python.constants.ENCODER_TRACK4_ENCODER:
                 self.app.melodic_mode.set_channel_at_range_end(self.app.melodic_mode.channel_at_range_end + increment)
@@ -390,18 +475,35 @@ class SettingsMode(definitions.PyshaMode):
                 return True
 
             elif button_name == push2_python.constants.BUTTON_UPPER_ROW_3:
-                if self.app.midi_out_tmp_device_idx is None:
-                    if self.app.midi_out is not None:
-                        self.app.midi_out_tmp_device_idx = self.app.available_midi_out_device_names.index(self.app.midi_out.name)
-                    else:
-                        self.app.midi_out_tmp_device_idx = -1
-                self.app.midi_out_tmp_device_idx += 1
-                # Make index position wrap
-                if self.app.midi_out_tmp_device_idx >= len(self.app.available_midi_out_device_names):
-                    self.app.midi_out_tmp_device_idx = -1  # Will use -1 for "None"
-                elif self.app.midi_out_tmp_device_idx < -1:
-                    self.app.midi_out_tmp_device_idx = len(self.app.available_midi_out_device_names) - 1
+
+                instr = self.app.track_selection_mode.get_current_track_info()['instrument_short_name']
+
+                available = [
+                    n for n in self.app.synths_midi.scan_available_ports()["out"]
+                    if "Ableton Push" not in n
+                    and "RtMidi" not in n
+                    and "Through" not in n
+                ]
+
+                if not hasattr(self, "instrument_out_tmp_idx") or self.instrument_out_tmp_idx is None:
+                    ports = self.app.synths_midi.instrument_midi_ports.get(instr, {})
+                    current = ports.get("out")
+                    try:
+                        self.instrument_out_tmp_idx = available.index(current.name)
+                    except:
+                        self.instrument_out_tmp_idx = -1
+
+                # increment
+                self.instrument_out_tmp_idx += 1
+
+                # wrap
+                if self.instrument_out_tmp_idx >= len(available):
+                    self.instrument_out_tmp_idx = -1
+                elif self.instrument_out_tmp_idx < -1:
+                    self.instrument_out_tmp_idx = len(available) - 1
+
                 return True
+
 
             elif button_name == push2_python.constants.BUTTON_UPPER_ROW_4:
                 self.app.set_midi_out_channel(self.app.midi_out_channel + 1, wrap=True)
