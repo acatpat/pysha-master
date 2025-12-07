@@ -26,7 +26,7 @@ class SequencerTarget:
     # --------------------
     def play_step(self, pad_index, step_index, velocity=100):
 
-        instrument_name = self.app.current_instrument_definition  # le nom court de l’instrument sélectionné
+        instrument_name = self.app.sequencer_window.sequencer_output_instrument  # le nom court de l’instrument sélectionné pour le seqencer
         if not instrument_name:
             return
 

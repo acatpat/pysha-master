@@ -405,35 +405,33 @@ class PyshaApp(object):
 
             instrument_ports.setdefault(instr, {})
 
-            # INPUT MATCH (nom exact)
+            # --- INPUT MATCH (nom exact uniquement) ---
             if in_name in available_in:
                 instrument_ports[instr]['in'] = in_name
                 print(f'[PRESET] applied IN for {instr}: {in_name}')
             else:
                 print(f'[PRESET] IN not found for {instr}: {in_name} -> ignored')
+                instrument_ports[instr]['in'] = None
 
-            # OUTPUT MATCH (nom exact)
+            # --- OUTPUT MATCH (nom exact uniquement) ---
             if out_name in available_out:
-                old_port = instrument_ports[instr].get("out")
-                if old_port:
-                    try:
-                        old_port.close()
-                    except Exception:
-                        pass
-
-                midi_out_port = None
-                for attempt in range(2):
-                    try:
-                        midi_out_port = mido.open_output(out_name)
-                        print(f'[PRESET] applied OUT for {instr}: {out_name}')
-                        break
-                    except IOError:
-                        print(f'[PRESET] Attempt {attempt+1} failed to open OUT port {out_name} for {instr}')
-                        time.sleep(0.5)
-                instrument_ports[instr]['out'] = midi_out_port
+                instrument_ports[instr]['out'] = out_name
+                print(f'[PRESET] applied OUT for {instr}: {out_name}')
             else:
                 print(f'[PRESET] OUT not found for {instr}: {out_name} -> ignored')
+                instrument_ports[instr]['out'] = None
 
+            # --- NOTIFIER Synths_Midi POUR OUVRIR LES PORTS RÉELS ---
+            try:
+                self.synths_midi.assign_instrument_ports(
+                    instrument_name=instr,
+                    in_name=instrument_ports[instr].get("in"),
+                    out_name=instrument_ports[instr].get("out"),
+                )
+            except Exception as e:
+                print(f'[PRESET] Error assigning ports to Synths_Midi for {instr}: {e}')
+
+        # --- MIROIR POUR SYNTHWINDOW (UI SEULEMENT, N’OUVRE PAS LES PORTS) ---
         self.synth_window.instrument_midi_ports = instrument_ports
 
         # ------------------------------------------------------------------
@@ -451,6 +449,7 @@ class PyshaApp(object):
         # Mise à jour de l'affichage
         self.sequencer_window.update_pad_display()
         self.sequencer_window.update_steps_display()
+
 
     def start_clock(self):
         self.synths_midi.start_clock()
@@ -1059,13 +1058,24 @@ def on_pad_aftertouch(_, pad_n, pad_ij, velocity):
 @push2_python.on_button_pressed()
 def on_button_pressed(_, name):
     try:
+        # --- GESTION GLOBALE PLAY ---
+        if name == "Play":
+            if hasattr(app, "sequencer_window"):
+                btn = app.sequencer_window.play_button
+                btn.setChecked(not btn.isChecked())
+                app.sequencer_window.toggle_play()
+            return
+
+        # --- GESTION NORMALE PAR LES MODES ---
         for mode in app.active_modes[::-1]:
             action_performed = mode.on_button_pressed(name)
             if action_performed:
-                break  # If mode took action, stop event propagation
+                break
+
     except NameError as e:
-       print('Error:  {}'.format(str(e)))
-       traceback.print_exc()
+        print('Error:  {}'.format(str(e)))
+        traceback.print_exc()
+
 
 
 @push2_python.on_button_released()

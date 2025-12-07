@@ -18,6 +18,10 @@ class SequencerWindow(QWidget):
         self.steps = [[False] * 32 for _ in range(16)]
         self.current_step = 0
 
+        # Instrument fixe du séquenceur (indépendant de SynthWindow)
+        self.sequencer_output_instrument = "DDRM"
+
+
         # Tempo par défaut
         self.tempo_bpm = 120
 
@@ -80,6 +84,21 @@ class SequencerWindow(QWidget):
         self.btn_preset_load = QPushButton("Load Preset")
         self.btn_preset_load.clicked.connect(self.on_load_preset)
         preset_layout.addWidget(self.btn_preset_load)
+
+        # ----- Séquenceur → Instrument -----
+        seq_instr_layout = QHBoxLayout()
+        main_layout.addLayout(seq_instr_layout)
+
+        self.seq_instr_label = QLabel("Séquenceur → Instrument :", self)
+        seq_instr_layout.addWidget(self.seq_instr_label)
+
+        self.seq_instr_combo = QComboBox(self)
+        self.seq_instr_combo.addItems(["DDRM", "PRO800", "MINITAUR", "KIJIMI", "OCTATRACK", "SOURCE"])
+        self.seq_instr_combo.setCurrentText(self.sequencer_output_instrument)
+
+        self.seq_instr_combo.currentTextChanged.connect(self.on_seq_output_instrument_changed)
+        seq_instr_layout.addWidget(self.seq_instr_combo)
+
 
         #
         # --- Sélecteur de résolution ---
@@ -339,3 +358,7 @@ class SequencerWindow(QWidget):
         if filepath and hasattr(self.app, "load_preset"):
             self.app.load_preset(filepath)
             self.update_steps_display()
+
+    def on_seq_output_instrument_changed(self, instr_name):
+        self.sequencer_output_instrument = instr_name
+        print(f"[SEQ] Séquenceur → instrument fixé à : {instr_name}")

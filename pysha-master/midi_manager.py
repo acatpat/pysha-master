@@ -82,6 +82,11 @@ class Synths_Midi:
         self._clock_running = False
         self._clock_thread = None
         self._bpm_provider = None  # fonction qui renvoie le BPM courant
+
+        # --- Ports déjà ouverts pour éviter les doubles ouvertures ---
+        self.open_output_ports = {}   # clé = nom du port → instance mido
+        self.open_input_ports = {}    # clé = nom du port → instance mido
+
         
         # pour appeler les ports
         self.incoming_midi_callback = None
@@ -194,6 +199,14 @@ class Synths_Midi:
 
             if full_name is not None:
 
+                # --- Vérifier si ce port système est déjà ouvert sous un autre alias ---
+                for alias, existing_port in self.midi_out_ports.items():
+                    if hasattr(existing_port, "name") and existing_port.name == full_name:
+                        # On réutilise ce port déjà ouvert
+                        self.midi_out_ports[name] = existing_port
+                        print(f'[MIDI] Reusing already open OUT port "{full_name}" for alias "{name}" (alias original: "{alias}")')
+                        return existing_port
+
                 # Fermer ancien OUT si existant
                 if name in self.midi_out_ports:
                     try:
@@ -241,23 +254,59 @@ class Synths_Midi:
 
     def assign_instrument_ports(self, instrument_name, in_name, out_name):
         """
-        Associe un synthé avec ses ports Mido.
-        - instrument_name : nom logique (ex: "PRO800")
-        - in_name / out_name : fragments de nom de port (comme avant)
+        Attribue les ports MIDI IN et OUT à un instrument donné.
+        - in_name et out_name sont des noms de ports (str) ou "".
+        - Cette fonction ouvre/ferme les ports si nécessaire.
+        - Elle met toujours à jour self.instrument_midi_ports[instr].
         """
-        in_port = None
-        out_port = None
 
-        if in_name:
-            in_port = self.open_in_port(in_name)
+        # S'assurer que l'entrée existe dans le dictionnaire
+        if instrument_name not in self.instrument_midi_ports:
+            self.instrument_midi_ports[instrument_name] = {"in": None, "out": None}
 
-        if out_name:
-            out_port = self.open_out_port(out_name)
+        # -- FERME ANCIENS PORTS IN/OUT SI NÉCESSAIRE --
+        old_in = self.instrument_midi_ports[instrument_name].get("in")
+        old_out = self.instrument_midi_ports[instrument_name].get("out")
 
-        self.instrument_midi_ports[instrument_name] = {
-            "in": in_port,
-            "out": out_port,
-        }
+        if old_in and hasattr(old_in, "close"):
+            try:
+                old_in.close()
+            except Exception:
+                pass
+
+        if old_out and hasattr(old_out, "close"):
+            try:
+                old_out.close()
+            except Exception:
+                pass
+
+        # -- CALCUL NOUVEAUX PORTS --
+        # Si le nom est vide ou None → pas de port
+        new_in_port = None
+        new_out_port = None
+
+        # OUVERTURE PORT IN
+        if in_name and isinstance(in_name, str) and in_name.strip() != "":
+            try:
+                new_in_port = self.open_in_port(in_name)
+            except Exception as e:
+                print(f"[Synths_Midi] Could not open IN port '{in_name}' for {instrument_name}: {e}")
+                new_in_port = None
+
+        # OUVERTURE PORT OUT
+        if out_name and isinstance(out_name, str) and out_name.strip() != "":
+            try:
+                new_out_port = self.open_out_port(out_name)
+            except Exception as e:
+                print(f"[Synths_Midi] Could not open OUT port '{out_name}' for {instrument_name}: {e}")
+                new_out_port = None
+
+        # -- STOCKAGE TOUJOURS MIS À JOUR --
+        self.instrument_midi_ports[instrument_name]["in"] = new_in_port
+        self.instrument_midi_ports[instrument_name]["out"] = new_out_port
+
+        print(f"[Synths_Midi] Ports set for {instrument_name}: IN={in_name}, OUT={out_name}")
+
 
 
     # -----------------------------------------------------------

@@ -86,7 +86,7 @@ class RhythmicMode(MelodicMode):
             return
 
         # Boutons Play / Résolution gérés ici
-        elif button_name in ("Play", "1/4", "1/8", "1/16", "1/32"):
+        elif button_name in ("1/4", "1/8", "1/16", "1/32"):
             self.app.sequencer_controller.handle_push2_button(button_name)
         else:
             # Les autres boutons sont traités par la classe parente
