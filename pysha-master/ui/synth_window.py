@@ -146,6 +146,28 @@ class SynthWindow(QWidget):
         if out_port_name and self.combo_out.findText(out_port_name) != -1:
             self.combo_out.setCurrentText(out_port_name)
 
+    # --------------------
+    # Mise à jour depuis SettingsMode
+    # --------------------
+    def update_port_from_external_change(self, instr, in_name=None, out_name=None):
+        """
+        Appelée depuis SettingsMode lorsqu'un port MIDI change.
+        Met à jour le dictionnaire et rafraîchit l'affichage.
+        """
+        if instr not in self.instrument_midi_ports:
+            self.instrument_midi_ports[instr] = {"in": None, "out": None}
+
+        if in_name is not None:
+            self.instrument_midi_ports[instr]["in"] = in_name
+        if out_name is not None:
+            self.instrument_midi_ports[instr]["out"] = out_name
+
+        # Si l’instrument affiché est celui qui a changé,
+        # on met à jour visuellement les QComboBox.
+        if instr == self._selected_instrument:
+            self.refresh_instrument_ports_ui(instr)
+
+
     def on_midi_in_changed(self, index):
         instr_name = self.combo.currentText()
         port_name = self.combo_in.currentText()

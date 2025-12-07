@@ -111,9 +111,16 @@ class SettingsMode(definitions.PyshaMode):
             if instr in self.app.synth_window.instrument_midi_ports:
                 self.app.synth_window.instrument_midi_ports[instr]["out"] = out_name
 
+            # Mise à jour visuelle
+            self.app.synth_window.update_port_from_external_change(
+                instr,
+                out_name=out_name
+            )
+
+
             # Reset
             self.instrument_out_tmp_idx = None
-            
+
             # Sécurité : ne jamais réappliquer pendant le même frame
             return
 
