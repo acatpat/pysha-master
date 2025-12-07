@@ -407,18 +407,16 @@ class SequencerController:
         num_steps = len(pad0)
 
         # Step courant
-        current_step = getattr(self.window, "current_step", 0)
+        current_step = getattr(self.window, "current_step", -1)
 
-        # Retirer le highlight précédent
-        if hasattr(self.window, "highlight_step"):
-            try:
-                self.window.highlight_step(current_step, False)
-            except Exception:
-                pass
+        # Gestion du premier tick après START
+        if current_step == -1:
+            next_step = 0
+        else:
+            next_step = (current_step + 1) % num_steps
 
-        # Calcul du prochain step
-        next_step = (current_step + 1) % num_steps
         self.window.current_step = next_step
+
 
         # Appliquer le nouveau highlight
         if hasattr(self.window, "highlight_step"):

@@ -3,7 +3,7 @@
 import mido
 import push2_python
 import definitions
-import rtmidi     
+import rtmidi
 import threading
 import time
 
@@ -61,37 +61,34 @@ class Push2_Midi:
         pass
 
 
-
 # =====================================================================
 #  ████  SYNTHS_MIDI  ████
 #  Gère TOUT le midi sauf Push2
-#  Ports, synthés, Pyramid, routing, envoi messages
+#  Ports, synthés, Pyramid, routing, envoi messages, clock
 # =====================================================================
 
 class Synths_Midi:
     def __init__(self):
         self.app = None
-        # stockage des ports MIDI ouvert
+
+        # stockage des ports MIDI ouverts (par alias)
         self.midi_in_ports = {}
         self.midi_out_ports = {}
 
-        # mapping instrument -> ports
+        # mapping instrument -> ports mido
+        # { "DDRM": {"in": mido.Input, "out": mido.Output}, ... }
         self.instrument_midi_ports = {}
 
-        # clock interne
-        self.clock_tick_callback = None  # ex: sequencer_controller.tick_from_clock_thread
-        self._clock_running = False
-        self._clock_thread = None
-        self._bpm_provider = None  # fonction qui renvoie le BPM courant
+        # callback clock → séquenceur (ex: sequencer_controller.tick_from_clock_thread)
+        self.clock_tick_callback = None
 
-        # --- Ports déjà ouverts pour éviter les doubles ouvertures ---
-        self.open_output_ports = {}   # clé = nom du port → instance mido
-        self.open_input_ports = {}    # clé = nom du port → instance mido
+        # état clock
+        self._bpm_provider = None  # fonction qui renvoie le BPM courant (optionnel)
 
-        
-        # pour appeler les ports
+        # pour rappeler les ports
         self.incoming_midi_callback = None
 
+        # pour info / filtrage
         self._blacklist = ["Ableton Push", "RtMidi", "Through"]
 
         # ---------------------------------------------------
@@ -101,14 +98,13 @@ class Synths_Midi:
         self.clock_factor = 1.0          # x0.5, x1, x2, etc. pour le séquenceur
         self._clock_thread = None
         self._clock_thread_running = False
-        self._await_first_tick = False  # ← nouveau flag pour le tout premier tick
-        self._clock_out_ports = set()    # noms logiques (les mêmes que pour open_out_port)
+
+        # flag : indique que le PREMIER tick doit envoyer START
+        self._await_first_tick = False
+
+        # pas utilisé pour l’instant, on garde pour futur
+        self._clock_out_ports = set()
         self._seq_tick_accumulator = 0.0
-
-        # callback optionnelle appelée à chaque tick séquenceur
-        # (à raccorder depuis l'app : ex. app.sequencer_controller.tick_from_clock_thread)
-        self.clock_tick_callback = None
-
 
     # -----------------------------------------------------------
     # ### BLOCK-PORTS ###
@@ -157,7 +153,6 @@ class Synths_Midi:
                     print("Available filtered inputs:")
                     for n in available:
                         print(f" - {n}")
-
             else:
                 print(f'No available input port for "{name}"')
 
@@ -171,8 +166,6 @@ class Synths_Midi:
                 del self.midi_in_ports[name]
 
         return self.midi_in_ports.get(name, None)
-
-
 
     def open_out_port(self, name):
         """
@@ -231,7 +224,6 @@ class Synths_Midi:
                     print("Available filtered outputs:")
                     for n in available:
                         print(f" - {n}")
-
             else:
                 print(f'No available output port for "{name}"')
 
@@ -246,14 +238,13 @@ class Synths_Midi:
 
         return self.midi_out_ports.get(name, None)
 
-
-
     def _generic_midi_in_callback(self, msg):
         if self.incoming_midi_callback is not None:
             self.incoming_midi_callback(msg)
 
-
-
+    # -----------------------------------------------------------
+    # ### ASSIGNATION PORTS PAR INSTRUMENT ###
+    # -----------------------------------------------------------
     def assign_instrument_ports(self, instrument_name, in_name, out_name):
         """
         Attribue les ports MIDI IN et OUT à un instrument donné.
@@ -266,7 +257,6 @@ class Synths_Midi:
         if instrument_name not in self.instrument_midi_ports:
             self.instrument_midi_ports[instrument_name] = {"in": None, "out": None}
 
-        # -- FERME ANCIENS PORTS IN/OUT SI NÉCESSAIRE --
         old_in = self.instrument_midi_ports[instrument_name].get("in")
         old_out = self.instrument_midi_ports[instrument_name].get("out")
 
@@ -274,12 +264,7 @@ class Synths_Midi:
         # On NE FERME PLUS old_in / old_out ici.
         # Sinon, on peut fermer un port pendant qu'un autre thread (le séquenceur)
         # est en train de faire .send(), ce qui peut faire planter RtMidi.
-        #
-        # La gestion de la fermeture reste à la charge du code de plus haut niveau
-        # (ou éventuellement d'une future passe de nettoyage), mais ici on privilégie
-        # la stabilité pendant que le séquenceur tourne.
 
-        # Si les noms demandés correspondent déjà aux ports actuels, on ne fait rien
         same_in = (
             in_name
             and old_in
@@ -297,7 +282,6 @@ class Synths_Midi:
             print(f"[Synths_Midi] Ports already set for {instrument_name}, nothing to change.")
             return
 
-        # -- CALCUL NOUVEAUX PORTS --
         # Si le nom est vide ou None → pas de port
         new_in_port = None
         new_out_port = None
@@ -318,20 +302,15 @@ class Synths_Midi:
                 print(f"[Synths_Midi] Could not open OUT port '{out_name}' for {instrument_name}: {e}")
                 new_out_port = None
 
-        # -- STOCKAGE TOUJOURS MIS À JOUR --
+        # STOCKAGE MIS À JOUR (toujours)
         self.instrument_midi_ports[instrument_name]["in"] = new_in_port
         self.instrument_midi_ports[instrument_name]["out"] = new_out_port
 
         print(f"[Synths_Midi] Ports set for {instrument_name}: IN={in_name}, OUT={out_name}")
 
-
-
-
-
     # -----------------------------------------------------------
     # ### BLOCK-ROUTING SHORTCUTS ###
     # -----------------------------------------------------------
-
     def send(self, msg, instrument_name=None):
         """
         Envoi MIDI unifié :
@@ -340,7 +319,6 @@ class Synths_Midi:
         - instrument_name = ["DDRM", "PRO800"] -> multi-cible
         """
 
-        # --- Normalisation en liste ---
         if instrument_name is None:
             return  # pas de port global
 
@@ -353,7 +331,6 @@ class Synths_Midi:
             except TypeError:
                 return
 
-        # --- Pour chaque instrument cible ---
         for instr in targets:
             ports = self.instrument_midi_ports.get(instr)
             if not ports:
@@ -369,7 +346,6 @@ class Synths_Midi:
                 out_port.send(msg)
             except Exception as e:
                 print(f"[MIDI] Failed to send {msg} to {instr}: {e}")
-
 
     def send_note_on(self, instrument_name, note, velocity=100):
         self.send(mido.Message("note_on", note=note, velocity=velocity), instrument_name)
@@ -389,83 +365,67 @@ class Synths_Midi:
     def send_pitchbend(self, instrument_name, value):
         self.send(mido.Message("pitchwheel", pitch=value), instrument_name)
 
-
-    # --------------------------
-    # MIDI Clock global
-    # --------------------------
-
+    # -----------------------------------------------------------
+    # ### MIDI CLOCK GLOBAL ###
+    # -----------------------------------------------------------
     def _normalize(self, name):
         if not name:
             return ""
-        return name.strip().lower()
+        return str(name).strip().lower()
 
     def _should_skip_start_stop(self, instr, msg):
         """
-        Empêche Start/Stop d'être envoyé à l'instrument utilisé par le sequencer.
+        Empêche Start/Stop d'être envoyé à l'instrument utilisé par le séquenceur.
         """
-        # On n'exclut que START et STOP
         if msg.type not in ("start", "stop"):
             return False
 
-        # Récupérer l'instrument utilisé par le sequencer
-        seq_instr = getattr(self.app.sequencer_window, "sequencer_output_instrument", None)
+        seq_instr = None
+        try:
+            if self.app is not None and hasattr(self.app, "sequencer_window"):
+                seq_instr = getattr(self.app.sequencer_window, "sequencer_output_instrument", None)
+        except Exception:
+            seq_instr = None
 
-        # Comparaison sécurisée
-        if self._normalize(instr) == self._normalize(seq_instr):
-            return True
-
-        return False
-
+        return self._normalize(instr) == self._normalize(seq_instr)
 
     def _send_clock_message_to_outputs(self, msg):
         """
         Envoie Clock / Start / Stop à tous les instruments ayant un OUT ouvert.
         ⚠️ Start/Stop ne sont PAS envoyés à l'instrument utilisé par le séquenceur.
         """
-
-        # Récupérer l'instrument utilisé par le séquenceur
-        seq_instr = None
-        try:
-            if hasattr(self.app, "sequencer_window"):
-                seq_instr = getattr(self.app.sequencer_window, "sequencer_output_instrument", None)
-        except Exception:
-            seq_instr = None
-
-        # Normalisation pour comparaison
-        def norm(x):
-            if not x:
-                return ""
-            return str(x).strip().lower()
-
-        seq_norm = norm(seq_instr)
-
         for instr, ports in self.instrument_midi_ports.items():
             outp = ports.get("out")
             if outp is None:
                 continue
 
-            # Block START/STOP pour l'instrument du séquenceur
-            if msg.type in ("start", "stop") and norm(instr) == seq_norm:
-                # Debug (facultatif)
-                # print(f"[CLOCK] Skipping {msg.type} for sequencer instrument {instr}")
+            if self._should_skip_start_stop(instr, msg):
                 continue
 
-            # Envoi du message
             try:
                 outp.send(msg)
             except Exception as e:
                 print(f"[CLOCK] Could not send {msg.type} to {instr}: {e}")
 
-
-
     def start_clock(self):
-        """Démarre la clock interne."""
+        """Démarre la clock interne (sans envoyer START ici)."""
         print("[CLOCK] start_clock() called")
 
-        # Flag pour forcer le premier step immédiatement après START
+        # Avant de démarrer : remettre le séquenceur avant le premier step
+        # pour que le premier advance_step → step 0 soit bien joué.
+        if self.app is not None and hasattr(self.app, "sequencer_controller"):
+            try:
+                self.app.sequencer_controller.current_step = -1
+                print("[CLOCK] Sequencer current_step reset to -1 before START")
+                if hasattr(self.app, "sequencer_window"):
+                    self.app.sequencer_window.current_step = -1
+            except Exception as e:
+                print("[CLOCK] Warning: impossible de remettre current_step à -1:", e)
+
+        # Demande : au premier tick, envoyer START avant le premier CLOCK
         self._await_first_tick = True
 
-        # Démarrage du thread clock si pas déjà actif
+        # Démarrage du thread s’il n’est pas déjà actif
         if self._clock_thread is None or not self._clock_thread_running:
             self._clock_thread_running = True
             self._clock_thread = threading.Thread(
@@ -474,52 +434,50 @@ class Synths_Midi:
             )
             self._clock_thread.start()
 
-        # Envoi START (mais pas à l'instrument du séquenceur)
-        try:
-            start_msg = mido.Message("start")
-            self._send_clock_message_to_outputs(start_msg)
-        except Exception:
-            pass
-
     def _clock_thread_loop(self):
         """
         Boucle interne :
         - envoie la clock MIDI (24ppqn) vers les sorties activées
+        - envoie START une seule fois au tout premier tick
         - notifie le séquenceur via clock_tick_callback
         """
         print("[CLOCK] clock thread started")
         next_tick_time = time.perf_counter()
 
         while self._clock_thread_running:
-            # Intervalle entre deux ticks MIDI
-            seconds_per_quarter = 60.0 / float(self.bpm)
-            tick_interval = seconds_per_quarter / 24.0
+            # BPM éventuellement fourni par l'app (sinon valeur locale)
+            bpm = float(self.bpm)
+            if self._bpm_provider is not None:
+                try:
+                    bpm = float(self._bpm_provider())
+                except Exception:
+                    bpm = float(self.bpm)
+
+            seconds_per_quarter = 60.0 / bpm
+            tick_interval = (seconds_per_quarter / 24.0) / max(self.clock_factor, 0.0001)
 
             now = time.perf_counter()
             if now >= next_tick_time:
                 next_tick_time += tick_interval
 
-                # 1) envoyer clock (0xF8)
+                # 1) FIRST TICK → envoyer START une seule fois
+                if self._await_first_tick:
+                    self._await_first_tick = False
+                    try:
+                        start_msg = mido.Message("start")
+                        self._send_clock_message_to_outputs(start_msg)
+                        print("[CLOCK] START sent")
+                    except Exception as e:
+                        print("[CLOCK] Could not send START on first tick:", e)
+
+                # 2) CLOCK (F8) à chaque tick
                 try:
                     clk_msg = mido.Message("clock")
                     self._send_clock_message_to_outputs(clk_msg)
                 except Exception:
                     pass
 
-                # --- 1bis : jouer immédiatement le step 0 au tout premier tick ---
-                if self._await_first_tick:
-                    self._await_first_tick = False
-                    try:
-                        if (
-                            hasattr(self.app, "sequencer_controller")
-                            and hasattr(self.app.sequencer_controller, "on_first_clock_tick")
-                        ):
-                            self.app.sequencer_controller.on_first_clock_tick()
-                    except Exception as e:
-                        print("[CLOCK] Error in on_first_clock_tick:", e)
-
-
-                # 2) notifier séquenceur
+                # 3) notifier le séquenceur (qui gère ticks→steps)
                 if self.clock_tick_callback is not None:
                     try:
                         self.clock_tick_callback()
@@ -531,14 +489,23 @@ class Synths_Midi:
         print("[CLOCK] clock thread stopped")
 
     def stop_clock(self):
-        """Stoppe la clock interne."""
+        """Stoppe la clock interne + envoie STOP."""
         print("[CLOCK] stop_clock() called")
         self._clock_thread_running = False
 
-        # Optionnel : message STOP pour les synthés
+        # Remettre le séquenceur avant le prochain START
+        if self.app is not None and hasattr(self.app, "sequencer_controller"):
+            try:
+                self.app.sequencer_controller.current_step = -1
+                print("[CLOCK] Sequencer current_step reset to -1 after STOP")
+                if hasattr(self.app, "sequencer_window"):
+                    self.app.sequencer_window.current_step = -1
+            except Exception as e:
+                print("[CLOCK] Warning: impossible de remettre current_step à -1 après stop:", e)
+
+        # STOP vers les synthés (sauf instrument du séquenceur)
         try:
             stop_msg = mido.Message("stop")
             self._send_clock_message_to_outputs(stop_msg)
         except Exception:
             pass
-
