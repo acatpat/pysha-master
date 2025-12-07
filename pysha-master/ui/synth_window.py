@@ -20,7 +20,7 @@ class SynthWindow(QWidget):
 
         self._instruments = []
         self._selected_instrument = None
-        self.instrument_midi_ports = {}  # {instr: {"in": str, "out": mido.Output}}
+        self.instrument_midi_ports = {}  # {instr: {"in": str, "out": str}}
 
         self._build_ui()
 
@@ -138,52 +138,69 @@ class SynthWindow(QWidget):
     # --------------------
     def refresh_instrument_ports_ui(self, instr):
         ports = self.instrument_midi_ports.get(instr, {})
-        in_port = ports.get("in")
-        if in_port and self.combo_in.findText(in_port) != -1:
-            self.combo_in.setCurrentText(in_port)
-        out_port = ports.get("out")
-        out_name = getattr(out_port, "name", None) if out_port else None
-        if out_name and self.combo_out.findText(out_name) != -1:
-            self.combo_out.setCurrentText(out_name)
+        in_port_name = ports.get("in")
+        if in_port_name and self.combo_in.findText(in_port_name) != -1:
+            self.combo_in.setCurrentText(in_port_name)
+
+        out_port_name = ports.get("out")
+        if out_port_name and self.combo_out.findText(out_port_name) != -1:
+            self.combo_out.setCurrentText(out_port_name)
 
     def on_midi_in_changed(self, index):
         instr_name = self.combo.currentText()
         port_name = self.combo_in.currentText()
+
         if instr_name not in self.instrument_midi_ports:
-            self.instrument_midi_ports[instr_name] = {"in": "", "out": None}
+            self.instrument_midi_ports[instr_name] = {"in": "", "out": ""}
+
+        # On stocke uniquement le NOM du port dans la fenêtre
         self.instrument_midi_ports[instr_name]["in"] = port_name
         print(f"[MIDI] IN port for {instr_name} set to {port_name}")
+
+        # Informer Synths_Midi pour qu’il ouvre/ferme les ports réels
+        if self.app is not None and hasattr(self.app, "synths_midi"):
+            current_out = self.instrument_midi_ports[instr_name].get("out") or None
+            try:
+                self.app.synths_midi.assign_instrument_ports(
+                    instrument_name=instr_name,
+                    in_name=port_name,
+                    out_name=current_out,
+                )
+            except Exception as e:
+                print(f"[MIDI] Error assigning IN port for {instr_name} in Synths_Midi:", e)
+
 
     def on_midi_out_changed(self, index):
         instr_name = self.combo.currentText()
         port_name = self.combo_out.currentText()
-        if instr_name not in self.instrument_midi_ports:
-            self.instrument_midi_ports[instr_name] = {"in": "", "out": None}
 
-        # fermer l’ancien port
-        old_port = self.instrument_midi_ports[instr_name].get("out")
-        if old_port:
+        if instr_name not in self.instrument_midi_ports:
+            self.instrument_midi_ports[instr_name] = {"in": "", "out": ""}
+
+        # Dans la fenêtre, on stocke uniquement le NOM du port
+        self.instrument_midi_ports[instr_name]["out"] = port_name
+        print(f"[MIDI] OUT port for {instr_name} set to {port_name}")
+
+        # Informer Synths_Midi pour qu’il ouvre/ferme le port réel
+        if self.app is not None and hasattr(self.app, "synths_midi"):
+            current_in = self.instrument_midi_ports[instr_name].get("in") or None
             try:
-                old_port.close()
+                self.app.synths_midi.assign_instrument_ports(
+                    instrument_name=instr_name,
+                    in_name=current_in,
+                    out_name=port_name,
+                )
+            except Exception as e:
+                print(f"[MIDI] Error assigning OUT port for {instr_name} in Synths_Midi:", e)
+
+        # L’appel à sequencer_controller.update_output_port reste optionnel ;
+        # on le laisse pour compatibilité, mais il ne reçoit plus d’objet port.
+        if hasattr(self, "sequencer_controller") and self.sequencer_controller:
+            try:
+                self.sequencer_controller.update_output_port(instr_name, port_name)
             except Exception:
                 pass
 
-        # ouvrir le nouveau port avec retry
-        midi_out_port = None
-        for attempt in range(2):
-            try:
-                midi_out_port = mido.open_output(port_name)
-                print(f"[MIDI] OUT port for {instr_name} opened: {port_name}")
-                break
-            except IOError:
-                print(f"[MIDI] Attempt {attempt+1} failed to open OUT port {port_name} for {instr_name}")
-                time.sleep(0.5)
-
-        self.instrument_midi_ports[instr_name]["out"] = midi_out_port
-
-        # mise à jour pour le séquenceur
-        if hasattr(self, "sequencer_controller") and self.sequencer_controller:
-            self.sequencer_controller.update_output_port(instr_name, midi_out_port)
     # --------------------
     # Compatibilité app.py
     # --------------------
