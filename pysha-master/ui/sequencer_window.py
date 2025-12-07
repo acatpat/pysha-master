@@ -163,12 +163,12 @@ class SequencerWindow(QWidget):
             self.play_button.setText("Stop")
             # Clock globale (Synths_Midi)
             if hasattr(self, "app"):
-                self.app.start_clock()
+                self.app.synths_midi.start_clock()
         else:
             self.play_button.setText("Play")
             self.reset_step_highlight()
             if hasattr(self, "app"):
-                self.app.stop_clock()
+                self.app.synths_midi.stop_clock()
 
     def set_tempo(self, bpm):
         """
