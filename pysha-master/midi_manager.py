@@ -70,6 +70,7 @@ class Push2_Midi:
 
 class Synths_Midi:
     def __init__(self):
+        self.app = None
         # stockage des ports MIDI ouvert
         self.midi_in_ports = {}
         self.midi_out_ports = {}
@@ -391,6 +392,71 @@ class Synths_Midi:
     # --------------------------
     # MIDI Clock global
     # --------------------------
+
+    def _normalize(self, name):
+        if not name:
+            return ""
+        return name.strip().lower()
+
+    def _should_skip_start_stop(self, instr, msg):
+        """
+        Empêche Start/Stop d'être envoyé à l'instrument utilisé par le sequencer.
+        """
+        # On n'exclut que START et STOP
+        if msg.type not in ("start", "stop"):
+            return False
+
+        # Récupérer l'instrument utilisé par le sequencer
+        seq_instr = getattr(self.app.sequencer_window, "sequencer_output_instrument", None)
+
+        # Comparaison sécurisée
+        if self._normalize(instr) == self._normalize(seq_instr):
+            return True
+
+        return False
+
+
+    def _send_clock_message_to_outputs(self, msg):
+        """
+        Envoie Clock / Start / Stop à tous les instruments ayant un OUT ouvert.
+        ⚠️ Start/Stop ne sont PAS envoyés à l'instrument utilisé par le séquenceur.
+        """
+
+        # Récupérer l'instrument utilisé par le séquenceur
+        seq_instr = None
+        try:
+            if hasattr(self.app, "sequencer_window"):
+                seq_instr = getattr(self.app.sequencer_window, "sequencer_output_instrument", None)
+        except Exception:
+            seq_instr = None
+
+        # Normalisation pour comparaison
+        def norm(x):
+            if not x:
+                return ""
+            return str(x).strip().lower()
+
+        seq_norm = norm(seq_instr)
+
+        for instr, ports in self.instrument_midi_ports.items():
+            outp = ports.get("out")
+            if outp is None:
+                continue
+
+            # Block START/STOP pour l'instrument du séquenceur
+            if msg.type in ("start", "stop") and norm(instr) == seq_norm:
+                # Debug (facultatif)
+                # print(f"[CLOCK] Skipping {msg.type} for sequencer instrument {instr}")
+                continue
+
+            # Envoi du message
+            try:
+                outp.send(msg)
+            except Exception as e:
+                print(f"[CLOCK] Could not send {msg.type} to {instr}: {e}")
+
+
+
     def start_clock(self):
         """Démarre la clock interne."""
         print("[CLOCK] start_clock() called")
@@ -457,3 +523,4 @@ class Synths_Midi:
             self._send_clock_message_to_outputs(stop_msg)
         except Exception:
             pass
+

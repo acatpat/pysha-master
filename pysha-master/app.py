@@ -118,6 +118,8 @@ class PyshaApp(object):
         self.sequencer_window.sequencer_target = self.sequencer_target
 
         self.synths_midi = Synths_Midi()
+        self.synths_midi.app = self
+
 
         
         self.synth_window = SynthWindow(app=self)
