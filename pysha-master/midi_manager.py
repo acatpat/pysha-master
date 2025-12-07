@@ -268,17 +268,32 @@ class Synths_Midi:
         old_in = self.instrument_midi_ports[instrument_name].get("in")
         old_out = self.instrument_midi_ports[instrument_name].get("out")
 
-        if old_in and hasattr(old_in, "close"):
-            try:
-                old_in.close()
-            except Exception:
-                pass
+        # ⚠ IMPORTANT :
+        # On NE FERME PLUS old_in / old_out ici.
+        # Sinon, on peut fermer un port pendant qu'un autre thread (le séquenceur)
+        # est en train de faire .send(), ce qui peut faire planter RtMidi.
+        #
+        # La gestion de la fermeture reste à la charge du code de plus haut niveau
+        # (ou éventuellement d'une future passe de nettoyage), mais ici on privilégie
+        # la stabilité pendant que le séquenceur tourne.
 
-        if old_out and hasattr(old_out, "close"):
-            try:
-                old_out.close()
-            except Exception:
-                pass
+        # Si les noms demandés correspondent déjà aux ports actuels, on ne fait rien
+        same_in = (
+            in_name
+            and old_in
+            and hasattr(old_in, "name")
+            and old_in.name == in_name
+        )
+        same_out = (
+            out_name
+            and old_out
+            and hasattr(old_out, "name")
+            and old_out.name == out_name
+        )
+
+        if (in_name is None or in_name == "" or same_in) and (out_name is None or out_name == "" or same_out):
+            print(f"[Synths_Midi] Ports already set for {instrument_name}, nothing to change.")
+            return
 
         # -- CALCUL NOUVEAUX PORTS --
         # Si le nom est vide ou None → pas de port
