@@ -107,10 +107,6 @@ class SettingsMode(definitions.PyshaMode):
             # Appliquer changement
             self.app.synths_midi.assign_instrument_ports(instr, in_name, out_name)
 
-            # Sync avec SynthWindow
-            if instr in self.app.synth_window.instrument_midi_ports:
-                self.app.synth_window.instrument_midi_ports[instr]["out"] = out_name
-
             # Mise à jour visuelle
             self.app.synth_window.update_port_from_external_change(
                 instr,

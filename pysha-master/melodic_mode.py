@@ -288,12 +288,19 @@ class MelodicMode(definitions.PyshaMode):
                 self.add_note_being_played(midi_note, 'push')
             msg = mido.Message('note_on', note=midi_note, velocity=velocity if not self.fixed_velocity_mode else 127)
             selected_instrument = self.app.synth_window._selected_instrument
-            midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
-            if midi_out_port is not None:
+
+            # On regarde si un nom de port OUT a été défini pour cet instrument
+            out_name = None
+            if hasattr(self.app, "synths_midi") and self.app.synths_midi is not None:
+                out_name = self.app.synths_midi.get_instrument_out_port(selected_instrument)
+
+            if out_name:
+                # Un port spécifique est configuré → on utilise Synths_Midi
                 self.app.synths_midi.send(msg, instrument_name=selected_instrument)
             else:
-                # fallback sur le port global
+                # Sinon, fallback global inchangé
                 self.app.send_midi(msg)
+
 
             self.update_pads()  # Directly calling update pads method because we want user to feel feedback as quick as possible
             return True
@@ -306,12 +313,19 @@ class MelodicMode(definitions.PyshaMode):
                 self.remove_note_being_played(midi_note, 'push')
             msg = mido.Message('note_off', note=midi_note, velocity=velocity)
             selected_instrument = self.app.synth_window._selected_instrument
-            midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
-            if midi_out_port is not None:
+
+            # On regarde si un nom de port OUT a été défini pour cet instrument
+            out_name = None
+            if hasattr(self.app, "synths_midi") and self.app.synths_midi is not None:
+                out_name = self.app.synths_midi.get_instrument_out_port(selected_instrument)
+
+            if out_name:
+                # Un port spécifique est configuré → on utilise Synths_Midi
                 self.app.synths_midi.send(msg, instrument_name=selected_instrument)
             else:
-                # fallback sur le port global
+                # Sinon, fallback global inchangé
                 self.app.send_midi(msg)
+
 
             self.update_pads()  # Directly calling update pads method because we want user to feel feedback as quick as possible
             return True
@@ -328,12 +342,19 @@ class MelodicMode(definitions.PyshaMode):
             self.latest_channel_at_value = (time.time(), velocity)
             msg = mido.Message('aftertouch', value=velocity)
         selected_instrument = self.app.synth_window._selected_instrument
-        midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
-        if midi_out_port is not None:
+
+        # On regarde si un nom de port OUT a été défini pour cet instrument
+        out_name = None
+        if hasattr(self.app, "synths_midi") and self.app.synths_midi is not None:
+            out_name = self.app.synths_midi.get_instrument_out_port(selected_instrument)
+
+        if out_name:
+            # Un port spécifique est configuré → on utilise Synths_Midi
             self.app.synths_midi.send(msg, instrument_name=selected_instrument)
         else:
-            # fallback sur le port global
+            # Sinon, fallback global inchangé
             self.app.send_midi(msg)
+
 
         return True
 
@@ -343,24 +364,38 @@ class MelodicMode(definitions.PyshaMode):
         else:
             msg = mido.Message('pitchwheel', pitch=value)
         selected_instrument = self.app.synth_window._selected_instrument
-        midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
-        if midi_out_port is not None:
+
+        # On regarde si un nom de port OUT a été défini pour cet instrument
+        out_name = None
+        if hasattr(self.app, "synths_midi") and self.app.synths_midi is not None:
+            out_name = self.app.synths_midi.get_instrument_out_port(selected_instrument)
+
+        if out_name:
+            # Un port spécifique est configuré → on utilise Synths_Midi
             self.app.synths_midi.send(msg, instrument_name=selected_instrument)
         else:
-            # fallback sur le port global
+            # Sinon, fallback global inchangé
             self.app.send_midi(msg)
+
 
         return True
 
     def on_sustain_pedal(self, sustain_on):
         msg = mido.Message('control_change', control=64, value=127 if sustain_on else 0)
         selected_instrument = self.app.synth_window._selected_instrument
-        midi_out_port = self.app.synth_window.instrument_midi_ports.get(selected_instrument, {}).get("out", None)
-        if midi_out_port is not None:
+
+        # On regarde si un nom de port OUT a été défini pour cet instrument
+        out_name = None
+        if hasattr(self.app, "synths_midi") and self.app.synths_midi is not None:
+            out_name = self.app.synths_midi.get_instrument_out_port(selected_instrument)
+
+        if out_name:
+            # Un port spécifique est configuré → on utilise Synths_Midi
             self.app.synths_midi.send(msg, instrument_name=selected_instrument)
         else:
-            # fallback sur le port global
+            # Sinon, fallback global inchangé
             self.app.send_midi(msg)
+
 
         return True
 

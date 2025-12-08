@@ -20,7 +20,6 @@ class SynthWindow(QWidget):
 
         self._instruments = []
         self._selected_instrument = None
-        self.instrument_midi_ports = {}  # {instr: {"in": str, "out": str}}
 
         self._build_ui()
 
@@ -137,14 +136,23 @@ class SynthWindow(QWidget):
     # Ports MIDI
     # --------------------
     def refresh_instrument_ports_ui(self, instr):
-        ports = self.instrument_midi_ports.get(instr, {})
-        in_port_name = ports.get("in")
+        """
+        Rafraîchit les QComboBox en lisant les noms de ports
+        directement depuis Synths_Midi (source unique).
+        """
+        if not hasattr(self, "app") or self.app is None:
+            return
+        if not hasattr(self.app, "synths_midi") or self.app.synths_midi is None:
+            return
+
+        in_port_name = self.app.synths_midi.get_instrument_in_port(instr)
         if in_port_name and self.combo_in.findText(in_port_name) != -1:
             self.combo_in.setCurrentText(in_port_name)
 
-        out_port_name = ports.get("out")
+        out_port_name = self.app.synths_midi.get_instrument_out_port(instr)
         if out_port_name and self.combo_out.findText(out_port_name) != -1:
             self.combo_out.setCurrentText(out_port_name)
+
 
     # --------------------
     # Mise à jour depuis SettingsMode
@@ -152,36 +160,37 @@ class SynthWindow(QWidget):
     def update_port_from_external_change(self, instr, in_name=None, out_name=None):
         """
         Appelée depuis SettingsMode lorsqu'un port MIDI change.
-        Met à jour le dictionnaire et rafraîchit l'affichage.
+        Met à jour Synths_Midi et rafraîchit l'affichage si besoin.
         """
-        if instr not in self.instrument_midi_ports:
-            self.instrument_midi_ports[instr] = {"in": None, "out": None}
+        if not hasattr(self, "app") or self.app is None:
+            return
+        if not hasattr(self.app, "synths_midi") or self.app.synths_midi is None:
+            return
 
         if in_name is not None:
-            self.instrument_midi_ports[instr]["in"] = in_name
+            self.app.synths_midi.set_instrument_in_port(instr, in_name)
         if out_name is not None:
-            self.instrument_midi_ports[instr]["out"] = out_name
+            self.app.synths_midi.set_instrument_out_port(instr, out_name)
 
-        # Si l’instrument affiché est celui qui a changé,
-        # on met à jour visuellement les QComboBox.
         if instr == self._selected_instrument:
             self.refresh_instrument_ports_ui(instr)
+
 
 
     def on_midi_in_changed(self, index):
         instr_name = self.combo.currentText()
         port_name = self.combo_in.currentText()
 
-        if instr_name not in self.instrument_midi_ports:
-            self.instrument_midi_ports[instr_name] = {"in": "", "out": ""}
-
-        # On stocke uniquement le NOM du port dans la fenêtre
-        self.instrument_midi_ports[instr_name]["in"] = port_name
         print(f"[MIDI] IN port for {instr_name} set to {port_name}")
 
-        # Informer Synths_Midi pour qu’il ouvre/ferme les ports réels
-        if self.app is not None and hasattr(self.app, "synths_midi"):
-            current_out = self.instrument_midi_ports[instr_name].get("out") or None
+        if self.app is not None and hasattr(self.app, "synths_midi") and self.app.synths_midi is not None:
+            # 1) mémoriser le nom du port côté Synths_Midi
+            self.app.synths_midi.set_instrument_in_port(instr_name, port_name)
+
+            # 2) récupérer le OUT actuel (s'il existe) pour l'assignation
+            current_out = self.app.synths_midi.get_instrument_out_port(instr_name) or None
+
+            # 3) demander à Synths_Midi d'ouvrir / fermer les vrais ports
             try:
                 self.app.synths_midi.assign_instrument_ports(
                     instrument_name=instr_name,
@@ -192,20 +201,21 @@ class SynthWindow(QWidget):
                 print(f"[MIDI] Error assigning IN port for {instr_name} in Synths_Midi:", e)
 
 
+
     def on_midi_out_changed(self, index):
         instr_name = self.combo.currentText()
         port_name = self.combo_out.currentText()
 
-        if instr_name not in self.instrument_midi_ports:
-            self.instrument_midi_ports[instr_name] = {"in": "", "out": ""}
-
-        # Dans la fenêtre, on stocke uniquement le NOM du port
-        self.instrument_midi_ports[instr_name]["out"] = port_name
         print(f"[MIDI] OUT port for {instr_name} set to {port_name}")
 
-        # Informer Synths_Midi pour qu’il ouvre/ferme le port réel
-        if self.app is not None and hasattr(self.app, "synths_midi"):
-            current_in = self.instrument_midi_ports[instr_name].get("in") or None
+        if self.app is not None and hasattr(self.app, "synths_midi") and self.app.synths_midi is not None:
+            # 1) mémoriser le nom du port OUT
+            self.app.synths_midi.set_instrument_out_port(instr_name, port_name)
+
+            # 2) récupérer le IN actuel (s'il existe)
+            current_in = self.app.synths_midi.get_instrument_in_port(instr_name) or None
+
+            # 3) demander l'assignation complète dans Synths_Midi
             try:
                 self.app.synths_midi.assign_instrument_ports(
                     instrument_name=instr_name,
@@ -216,12 +226,13 @@ class SynthWindow(QWidget):
                 print(f"[MIDI] Error assigning OUT port for {instr_name} in Synths_Midi:", e)
 
         # L’appel à sequencer_controller.update_output_port reste optionnel ;
-        # on le laisse pour compatibilité, mais il ne reçoit plus d’objet port.
+        # on le laisse comme avant (il reçoit maintenant un nom de port).
         if hasattr(self, "sequencer_controller") and self.sequencer_controller:
             try:
                 self.sequencer_controller.update_output_port(instr_name, port_name)
             except Exception:
                 pass
+
 
     # --------------------
     # Compatibilité app.py

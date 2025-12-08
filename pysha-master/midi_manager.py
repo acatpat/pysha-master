@@ -75,6 +75,9 @@ class Synths_Midi:
 
         # mapping instrument -> ports mido
         self.instrument_midi_ports = {}
+        # Noms de ports déclarés par l’utilisateur (UI ou preset)
+        self.instrument_port_names = {}
+
 
         # callback clock → sequencer
         self.clock_tick_callback = None
@@ -201,6 +204,28 @@ class Synths_Midi:
     # -----------------------------------------------------------
     # ### ASSIGNATION PORTS PAR INSTRUMENT ###
     # -----------------------------------------------------------
+
+    def get_instrument_out_port(self, instrument_name):
+        if instrument_name in self.instrument_port_names:
+            return self.instrument_port_names[instrument_name].get("out")
+        return None
+
+    def get_instrument_in_port(self, instrument_name):
+        if instrument_name in self.instrument_port_names:
+            return self.instrument_port_names[instrument_name].get("in")
+        return None
+
+    def set_instrument_out_port(self, instrument_name, port_name):
+        if instrument_name not in self.instrument_port_names:
+            self.instrument_port_names[instrument_name] = {"in": None, "out": None}
+        self.instrument_port_names[instrument_name]["out"] = port_name
+
+    def set_instrument_in_port(self, instrument_name, port_name):
+        if instrument_name not in self.instrument_port_names:
+            self.instrument_port_names[instrument_name] = {"in": None, "out": None}
+        self.instrument_port_names[instrument_name]["in"] = port_name
+
+
     def assign_instrument_ports(self, instrument_name, in_name, out_name):
         if instrument_name not in self.instrument_midi_ports:
             self.instrument_midi_ports[instrument_name] = {"in": None, "out": None}

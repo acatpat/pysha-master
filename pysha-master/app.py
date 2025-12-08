@@ -124,7 +124,8 @@ class PyshaApp(object):
         
         self.synth_window = SynthWindow(app=self)
         self.synth_window.show()
-        self.instrument_midi_ports = self.synth_window.instrument_midi_ports
+        # Miroir vers la structure centralisée dans Synths_Midi
+        self.instrument_midi_ports = self.synths_midi.instrument_port_names
 
         # Afficher la fenêtre séquenceur
         self.sequencer_window.show()
@@ -279,7 +280,10 @@ class PyshaApp(object):
         # Instruments + midi ports (store names)
         preset['tracks'] = []
         # Expect synth_window.instrument_midi_ports to be a dict keyed by instrument short name
-        instrument_ports = getattr(self.synth_window, 'instrument_midi_ports', {}) or {}
+        instrument_ports = getattr(self.synths_midi, 'instrument_port_names', None)
+        if instrument_ports is None:
+            # fallback ancien comportement si jamais non initialisé
+            instrument_ports = {}
         # If track_selection_mode has tracks_info, prefer that ordering (non-breaking)
         tracks_info = getattr(self.track_selection_mode, 'tracks_info', None)
         if tracks_info:
@@ -389,8 +393,9 @@ class PyshaApp(object):
             self.add_display_notification('Error reading preset')
             return False
 
-        instrument_ports = getattr(self.synth_window, 'instrument_midi_ports', {}) or {}
+        instrument_ports = getattr(self.synths_midi, 'instrument_port_names', {}) or {}
         saved_tracks = data.get('tracks', [])
+
 
         available_in = [n for n in mido.get_input_names()
                         if 'Ableton Push' not in n and 'RtMidi' not in n and 'Through' not in n]
@@ -433,8 +438,9 @@ class PyshaApp(object):
             except Exception as e:
                 print(f'[PRESET] Error assigning ports to Synths_Midi for {instr}: {e}')
 
-        # --- MIROIR POUR SYNTHWINDOW (UI SEULEMENT, N’OUVRE PAS LES PORTS) ---
-        self.synth_window.instrument_midi_ports = instrument_ports
+        # --- MIROIR CENTRALISÉ POUR Synths_Midi (UI lit via get_instrument_*_port) ---
+        self.synths_midi.instrument_port_names = instrument_ports
+
 
         # ------------------------------------------------------------------
         # RESTORE SEQUENCER STATE
@@ -674,99 +680,7 @@ class PyshaApp(object):
             if mode_settings:
                 settings.update(mode_settings)
         json.dump(settings, open('settings.json', 'w'))
-    """
-    def init_midi_in(self, device_name=None):
-        print('Configuring MIDI in to {}...'.format(device_name))
-        self.available_midi_in_device_names = [name for name in mido.get_input_names() if 'Ableton Push' not in name and 'RtMidi' not in name and 'Through' not in name]
-        if device_name is not None:
-            try:
-                full_name = [name for name in self.available_midi_in_device_names if device_name in name][0]
-            except IndexError:
-                full_name = None
-            if full_name is not None:
-                if self.midi_in is not None:
-                    self.midi_in.callback = None  # Disable current callback (if any)
-                try:
-                    self.midi_in = mido.open_input(full_name)
-                    self.midi_in.callback = self.midi_in_handler
-                    print('Receiving MIDI in from "{0}"'.format(full_name))
-                except IOError:
-                    print('Could not connect to MIDI input port "{0}"\nAvailable device names:'.format(full_name))
-                    for name in self.available_midi_in_device_names:
-                        print(' - {0}'.format(name))
-            else:
-                print('No available device name found for {}'.format(device_name))
-        else:
-            if self.midi_in is not None:
-                self.midi_in.callback = None  # Disable current callback (if any)
-                self.midi_in.close()
-                self.midi_in = None
 
-        if self.midi_in is None:
-            print('Not receiving from any MIDI input')
-
-    def init_midi_out(self, device_name=None):
-        print('Configuring MIDI out to {}...'.format(device_name))
-        self.available_midi_out_device_names = [name for name in mido.get_output_names() if 'Ableton Push' not in name  and 'RtMidi' not in name and 'Through' not in name]
-        self.available_midi_out_device_names += ['Virtual']
-
-        if device_name is not None:
-            try:
-                full_name = [name for name in self.available_midi_out_device_names if device_name in name][0]
-            except IndexError:
-                full_name = None
-            if full_name is not None:
-                try:
-                    if full_name == 'Virtual':
-                        self.midi_out = mido.open_output(full_name, virtual=True)
-                    else:
-                        self.midi_out = mido.open_output(full_name)
-                    print('Will send MIDI to "{0}"'.format(full_name))
-                except IOError:
-                    print('Could not connect to MIDI output port "{0}"\nAvailable device names:'.format(full_name))
-                    for name in self.available_midi_out_device_names:
-                        print(' - {0}'.format(name))
-            else:
-                print('No available device name found for {}'.format(device_name))
-        else:
-            if self.midi_out is not None:
-                self.midi_out.close()
-                self.midi_out = None
-
-        if self.midi_out is None:
-            print('Won\'t send MIDI to any device')
-
-    def init_notes_midi_in(self, device_name=None):
-        print('Configuring notes MIDI in to {}...'.format(device_name))
-        self.available_midi_in_device_names = [name for name in mido.get_input_names() if 'Ableton Push' not in name and 'RtMidi' not in name and 'Through' not in name]
-
-        if device_name is not None:
-            try:
-                full_name = [name for name in self.available_midi_in_device_names if device_name in name][0]
-            except IndexError:
-                full_name = None
-            if full_name is not None:
-                if self.notes_midi_in is not None:
-                    self.notes_midi_in.callback = None  # Disable current callback (if any)
-                try:
-                    self.notes_midi_in = mido.open_input(full_name)
-                    self.notes_midi_in.callback = self.notes_midi_in_handler
-                    print('Receiving notes MIDI in from "{0}"'.format(full_name))
-                except IOError:
-                    print('Could not connect to notes MIDI input port "{0}"\nAvailable device names:'.format(full_name))
-                    for name in self.available_midi_in_device_names:
-                        print(' - {0}'.format(name))
-            else:
-                print('No available device name found for {}'.format(device_name))
-        else:
-            if self.notes_midi_in is not None:
-                self.notes_midi_in.callback = None  # Disable current callback (if any)
-                self.notes_midi_in.close()
-                self.notes_midi_in = None
-
-        if self.notes_midi_in is None:
-            print('Could not configures notes MIDI input')
-    """
     def set_midi_in_channel(self, channel, wrap=False):
         self.midi_in_channel = channel
         if self.midi_in_channel < -1:  # Use "-1" for "all channels"
@@ -795,34 +709,7 @@ class PyshaApp(object):
         #else:
             #self.init_midi_out(None)
         pass
-    """
-    def set_notes_midi_in_device_by_index(self, device_idx):
-        if device_idx >= 0 and device_idx < len(self.available_midi_in_device_names):
-            self.init_notes_midi_in(self.available_midi_in_device_names[device_idx])
-        else:
-            self.init_notes_midi_in(None)
 
-    def send_midi(self, msg, use_original_msg_channel=False):
-        # Unless we specifically say we want to use the original msg mnidi channel, set it to global midi out channel or to the channel of the current track
-        if not use_original_msg_channel and hasattr(msg, 'channel'):
-            midi_out_channel = self.midi_out_channel    
-            if self.midi_out_channel == -1:
-                # Send the message to the midi channel of the currently selected track (or to track 1 if selected track has no midi channel information)
-                track_midi_channel = self.track_selection_mode.get_current_track_info()['midi_channel']
-                if track_midi_channel == -1:
-                    midi_out_channel = 0
-                else:
-                    midi_out_channel = track_midi_channel - 1 # msg.channel is 0-indexed
-            msg = msg.copy(channel=midi_out_channel)
-        
-        if self.midi_out is not None:
-            self.midi_out.send(msg)
-
-
-    def send_midi_to_pyramid(self, msg):
-        # When sending to Pyramid, don't replace the MIDI channel because msg is already prepared with pyramidi chanel
-        self.send_midi(msg, use_original_msg_channel=True)
-    """
     def midi_in_handler(self, msg):
         # This will rule out sysex and other "strange" messages that don't have channel info
         if hasattr(msg, 'channel'):
