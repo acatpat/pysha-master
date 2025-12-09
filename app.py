@@ -402,74 +402,86 @@ class PyshaApp(object):
         instrument_ports = getattr(self.synths_midi, 'instrument_port_names', {}) or {}
         saved_tracks = data.get('tracks', [])
 
+        # Ports réellement disponibles
+        available_in = [
+            n for n in mido.get_input_names()
+            if 'Ableton Push' not in n and 'RtMidi' not in n and 'Through' not in n
+        ]
+        available_out = [
+            n for n in mido.get_output_names()
+            if 'Ableton Push' not in n and 'RtMidi' not in n and 'Through' not in n
+        ]
 
-        available_in = [n for n in mido.get_input_names()
-                        if 'Ableton Push' not in n and 'RtMidi' not in n and 'Through' not in n]
-        available_out = [n for n in mido.get_output_names()
-                        if 'Ableton Push' not in n and 'RtMidi' not in n and 'Through' not in n]
-
+        # --------------------------------------------------------
+        # ###  RECHARGE DES PORTS MIDI EXACTEMENT COMME L’UI  ###
+        # --------------------------------------------------------
         for t in saved_tracks:
             instr = t.get('instrument')
             if not instr:
                 continue
 
-            in_name = t.get('midi_in_port_name')
-            out_name = t.get('midi_out_port_name')
+            in_saved = t.get('midi_in_port_name')
+            out_saved = t.get('midi_out_port_name')
 
-            instrument_ports.setdefault(instr, {})
+            instrument_ports.setdefault(instr, {"in": None, "out": None})
 
-            # --- INPUT MATCH ---
-            matched_in = self.match_port(in_name, available_in)
+            # --- MATCHING DES NOMS SAUVÉS VERS LES PORTS DISPONIBLES ---
+            matched_in = self.match_port(in_saved, available_in) if in_saved else None
+            matched_out = self.match_port(out_saved, available_out) if out_saved else None
+
             if matched_in:
-                instrument_ports[instr]['in'] = matched_in
                 print(f'[PRESET] applied IN for {instr}: {matched_in}')
             else:
-                print(f'[PRESET] IN not found for {instr}: {in_name} -> ignored')
-                instrument_ports[instr]['in'] = None
+                print(f'[PRESET] IN not found for {instr}: {in_saved} -> ignored')
 
-
-            # --- OUTPUT MATCH (nom exact uniquement) ---
-            matched_out = self.match_port(out_name, available_out)
             if matched_out:
-                instrument_ports[instr]['out'] = matched_out
-
-                instrument_ports[instr]['out'] = out_name
-                print(f'[PRESET] applied OUT for {instr}: {out_name}')
+                print(f'[PRESET] applied OUT for {instr}: {matched_out}')
             else:
-                print(f'[PRESET] OUT not found for {instr}: {out_name} -> ignored')
-                instrument_ports[instr]['out'] = None
+                print(f'[PRESET] OUT not found for {instr}: {out_saved} -> ignored')
 
-            # --- NOTIFIER Synths_Midi POUR OUVRIR LES PORTS RÉELS ---
+            # 1) Met à jour le miroir "noms" comme le fait l’UI
+            self.synths_midi.set_instrument_in_port(instr, matched_in)
+            self.synths_midi.set_instrument_out_port(instr, matched_out)
+
+            # 2) Récupère les noms actuels (exactement comme dans SynthWindow)
+            current_in = self.synths_midi.get_instrument_in_port(instr)
+            current_out = self.synths_midi.get_instrument_out_port(instr)
+
+            # 3) Ouvre les ports MIDO réels pour CET instrument (IN + OUT)
             try:
                 self.synths_midi.assign_instrument_ports(
                     instrument_name=instr,
-                    in_name=instrument_ports[instr].get("in"),
-                    out_name=instrument_ports[instr].get("out"),
+                    in_name=current_in,
+                    out_name=current_out,
                 )
             except Exception as e:
-                print(f'[PRESET] Error assigning ports to Synths_Midi for {instr}: {e}')
+                print(f'[PRESET] Error assigning ports for {instr}: {e}')
 
         # --- MIROIR CENTRALISÉ POUR Synths_Midi (UI lit via get_instrument_*_port) ---
         self.synths_midi.instrument_port_names = instrument_ports
 
 
-        # ------------------------------------------------------------------
-        # RESTORE SEQUENCER STATE
-        # ------------------------------------------------------------------
+        # --------------------------------------------------------
+        # ###     RESTORE SEQUENCER STATE (inchangé)           ###
+        # --------------------------------------------------------
         sequencer_data = data.get("sequencer", {})
 
         self.sequencer_window.steps = sequencer_data.get(
             "steps", [[False]*32 for _ in range(16)]
         )
-        # Synchroniser le modèle interne du sequencer controller
+        # synchronisation modèle
         self.sequencer_controller.model = self.sequencer_window.steps
+
         self.sequencer_window.selected_pad = sequencer_data.get("selected_pad", 0)
         self.sequencer_window.tempo_bpm = sequencer_data.get("tempo_bpm", 120)
         self.sequencer_window.steps_per_beat = sequencer_data.get("steps_per_beat", 4)
 
-        # Mise à jour de l'affichage
+        # Mise à jour UI
         self.sequencer_window.update_pad_display()
         self.sequencer_window.update_steps_display()
+
+        print("[PRESET] Loaded successfully.")
+
 
 
     def start_clock(self):

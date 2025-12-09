@@ -47,6 +47,7 @@ class TrackSelectionMode(definitions.PyshaMode):
 
 
     def create_tracks(self):
+        self.tracks_info = []
         """This method creates 64 tracks corresponding to the Pyramid tracks that I use in my live setup.
         Instrument names are assigned according to the way I have them configured in the 64 tracks of Pyramid.
         Instrument names per track are loaded from "track_listing.json" file, and should correspond to instrument
@@ -86,7 +87,7 @@ class TrackSelectionMode(definitions.PyshaMode):
             print('Created {0} tracks!'.format(len(self.tracks_info)))
         else:
             # Create 64 empty tracks
-            for i in range(0, 64):
+            for i in range(0, 8):
                 self.tracks_info.append({
                         'track_name': '{0}{1}'.format((i % 16) + 1, ['A', 'B', 'C', 'D'][i//16]),
                         'instrument_name': '-',

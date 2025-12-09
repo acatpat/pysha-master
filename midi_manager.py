@@ -241,8 +241,8 @@ class Synths_Midi:
         )
 
         if (in_name in (None, "") or same_in) and (out_name in (None, "") or same_out):
-            print(f"[Synths_Midi] Ports already set for {instrument_name}, nothing to change.")
-            return
+            print(f"[Synths_Midi] Existing entries for {instrument_name}, reopening ports.")
+            # Pas de return ici → on laisse continuer l'ouverture
 
         new_in_port = None
         new_out_port = None
@@ -261,6 +261,14 @@ class Synths_Midi:
 
         self.instrument_midi_ports[instrument_name]["in"] = new_in_port
         self.instrument_midi_ports[instrument_name]["out"] = new_out_port
+
+        # --- IMPORTANT ---
+        # Garder instrument_port_names synchronisé (même structure que celle utilisée par l'UI)
+        self.instrument_port_names[instrument_name] = {
+            "in": in_name,
+            "out": out_name
+        }
+
 
         print(f"[Synths_Midi] Ports set for {instrument_name}: IN={in_name}, OUT={out_name}")
 

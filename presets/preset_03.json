@@ -1,13 +1,13 @@
 {
   "meta": {
-    "created_at": "2025-12-07T18:47:02.767898Z",
+    "created_at": "2025-12-09T19:27:47.306111Z",
     "app_version": "0.25"
   },
   "tracks": [
     {
       "instrument": "DDRM",
       "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -36,286 +36,6 @@
     },
     {
       "instrument": "PRO800",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DDRM",
-      "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
-    },
-    {
-      "instrument": "MINITAUR",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DOMINION",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "KIJIMI",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "OCTATRACK",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "SOURCE",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DDRM",
-      "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
-    },
-    {
-      "instrument": "MINITAUR",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DOMINION",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "KIJIMI",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "OCTATRACK",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "SOURCE",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DDRM",
-      "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
-    },
-    {
-      "instrument": "MINITAUR",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DOMINION",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "KIJIMI",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "OCTATRACK",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "SOURCE",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DDRM",
-      "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
-    },
-    {
-      "instrument": "MINITAUR",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DOMINION",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "KIJIMI",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "OCTATRACK",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "SOURCE",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DDRM",
-      "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
-    },
-    {
-      "instrument": "MINITAUR",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DOMINION",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "KIJIMI",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "OCTATRACK",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "SOURCE",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DDRM",
-      "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
-    },
-    {
-      "instrument": "MINITAUR",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DOMINION",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "KIJIMI",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "OCTATRACK",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "SOURCE",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DDRM",
-      "midi_in_port_name": null,
-      "midi_out_port_name": "Arturia DrumBrute 7"
-    },
-    {
-      "instrument": "MINITAUR",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "DOMINION",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "KIJIMI",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "OCTATRACK",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "SOURCE",
-      "midi_in_port_name": null,
-      "midi_out_port_name": null
-    },
-    {
-      "instrument": "-",
       "midi_in_port_name": null,
       "midi_out_port_name": null
     },
@@ -362,35 +82,35 @@
         false
       ],
       [
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
         false,
         false,
         false
@@ -400,7 +120,6 @@
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
@@ -408,7 +127,6 @@
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
@@ -416,7 +134,6 @@
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
@@ -424,7 +141,10 @@
         false,
         false,
         false,
-        true,
+        false,
+        false,
+        false,
+        false,
         false,
         false,
         false
@@ -872,7 +592,7 @@
         false
       ]
     ],
-    "selected_pad": 7,
+    "selected_pad": 0,
     "tempo_bpm": 120,
     "steps_per_beat": 4
   }

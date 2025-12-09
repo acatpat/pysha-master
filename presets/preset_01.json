@@ -1,13 +1,13 @@
 {
   "meta": {
-    "created_at": "2025-12-07T18:07:40.491871Z",
+    "created_at": "2025-12-09T19:09:07.956963Z",
     "app_version": "0.25"
   },
   "tracks": [
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -46,8 +46,8 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -86,8 +86,8 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -126,8 +126,8 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -166,8 +166,8 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -206,8 +206,8 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -246,8 +246,8 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -286,8 +286,8 @@
     },
     {
       "instrument": "DDRM",
-      "midi_in_port_name": "",
-      "midi_out_port_name": "Arturia DrumBrute 7"
+      "midi_in_port_name": null,
+      "midi_out_port_name": null
     },
     {
       "instrument": "MINITAUR",
@@ -362,35 +362,35 @@
         false
       ],
       [
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
-        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
         false,
         false,
         false
@@ -400,7 +400,6 @@
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
@@ -408,7 +407,6 @@
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
@@ -416,7 +414,6 @@
         false,
         false,
         false,
-        true,
         false,
         false,
         false,
@@ -424,7 +421,10 @@
         false,
         false,
         false,
-        true,
+        false,
+        false,
+        false,
+        false,
         false,
         false,
         false
@@ -872,7 +872,7 @@
         false
       ]
     ],
-    "selected_pad": 2,
+    "selected_pad": 0,
     "tempo_bpm": 120,
     "steps_per_beat": 4
   }
