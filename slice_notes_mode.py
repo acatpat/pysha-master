@@ -24,6 +24,12 @@ class SliceNotesMode(MelodicMode):
     def pad_ij_to_midi_note(self, pad_ij):
         return self.start_note + 8 * (7 - pad_ij[0]) + pad_ij[1]
 
+    def deactivate(self):
+        # éteindre les pads utilisés par SliceNotes
+        self.push.pads.set_pads_color([[definitions.BLACK]*8 for _ in range(8)])
+        # laisser MelodicMode gérer ses propres boutons, donc rien à faire ici
+
+
     def update_pads(self):
         color_matrix = []
         for i in range(0, 8):

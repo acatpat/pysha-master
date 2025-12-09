@@ -418,16 +418,21 @@ class PyshaApp(object):
 
             instrument_ports.setdefault(instr, {})
 
-            # --- INPUT MATCH (nom exact uniquement) ---
-            if in_name in available_in:
-                instrument_ports[instr]['in'] = in_name
-                print(f'[PRESET] applied IN for {instr}: {in_name}')
+            # --- INPUT MATCH ---
+            matched_in = self.match_port(in_name, available_in)
+            if matched_in:
+                instrument_ports[instr]['in'] = matched_in
+                print(f'[PRESET] applied IN for {instr}: {matched_in}')
             else:
                 print(f'[PRESET] IN not found for {instr}: {in_name} -> ignored')
                 instrument_ports[instr]['in'] = None
 
+
             # --- OUTPUT MATCH (nom exact uniquement) ---
-            if out_name in available_out:
+            matched_out = self.match_port(out_name, available_out)
+            if matched_out:
+                instrument_ports[instr]['out'] = matched_out
+
                 instrument_ports[instr]['out'] = out_name
                 print(f'[PRESET] applied OUT for {instr}: {out_name}')
             else:
@@ -456,6 +461,8 @@ class PyshaApp(object):
         self.sequencer_window.steps = sequencer_data.get(
             "steps", [[False]*32 for _ in range(16)]
         )
+        # Synchroniser le modèle interne du sequencer controller
+        self.sequencer_controller.model = self.sequencer_window.steps
         self.sequencer_window.selected_pad = sequencer_data.get("selected_pad", 0)
         self.sequencer_window.tempo_bpm = sequencer_data.get("tempo_bpm", 120)
         self.sequencer_window.steps_per_beat = sequencer_data.get("steps_per_beat", 4)
@@ -639,19 +646,24 @@ class PyshaApp(object):
 
     def toggle_melodic_rhythmic_slice_modes(self):
         print("ACTIVE MODES:", self.active_modes)
+
         if self.is_mode_active(self.melodic_mode):
             self.set_rhythmic_mode()
+
         elif self.is_mode_active(self.rhyhtmic_mode):
             self.set_slice_notes_mode()
+
         elif self.is_mode_active(self.slice_notes_mode):
-            # nouveau : passer en SessionMode
-            self.set_mode_for_xor_group(self.session_mode)
-        elif hasattr(self, "session_mode") and self.is_mode_active(self.session_mode):
-            # si SessionMode est actif, on revient à Melodic
+            # passage en Session Mode
+            self.set_session_mode()
+
+        elif self.is_mode_active(self.session_mode):
+            # retour à Melodic
             self.set_melodic_mode()
+
         else:
-            # Si aucun des modes n'est actif, on repart sur Melodic
             self.set_melodic_mode()
+
 
 
     def set_melodic_mode(self):
@@ -754,7 +766,6 @@ class PyshaApp(object):
                         except Exception:
                             pass  # same robustness as old code
 
-
     def notes_midi_in_handler(self, msg):
         # Check if message is note on or off and check if the MIDI channel is the one assigned to the currently selected track
         # Then, send message to the melodic/rhythmic active modes so the notes are shown in pads/keys
@@ -762,14 +773,20 @@ class PyshaApp(object):
             track_midi_channel = self.track_selection_mode.get_current_track_info()['midi_channel']
             if msg.channel == track_midi_channel - 1:  # msg.channel is 0-indexed
                 for mode in self.active_modes:
-                    if mode == self.melodic_mode or mode == self.rhyhtmic_mode:
+                    # Melodic, Rhythmic ET Session reçoivent les notes du port "notes_midi_in"
+                    if mode in (self.melodic_mode, self.rhyhtmic_mode, self.session_mode):
+
                         mode.on_midi_in(msg, source=self.notes_midi_in.name)
-                        if mode.lumi_midi_out is not None:
-                            mode.lumi_midi_out.send(msg)
+
+                        # Lumi output pour les modes qui en ont un
+                        lumi = getattr(mode, "lumi_midi_out", None)
+                        if lumi is not None:
+                            lumi.send(msg)
                         else:
-                            # If midi not properly initialized try to re-initialize but don't do it too ofter
-                            if time.time() - mode.last_time_tried_initialize_lumi > 5:
-                                mode.init_lumi_midi_out()
+                            # Si le mode utilise LUMI mais n'est pas initialisé
+                            if hasattr(mode, "last_time_tried_initialize_lumi"):
+                                if time.time() - mode.last_time_tried_initialize_lumi > 5:
+                                    mode.init_lumi_midi_out()
 
     def add_display_notification(self, text):
         self.notification_text = text
@@ -829,8 +846,12 @@ class PyshaApp(object):
             mode.check_for_delayed_actions()
 
         if self.pads_need_update:
+            # DEBUG : voir quels modes mettent à jour les pads
+            print("[DEBUG] update_pads for modes:",
+                [type(m).__name__ for m in self.active_modes])
             self.update_push2_pads()
             self.pads_need_update = False
+
 
         if self.buttons_need_update:
             self.update_push2_buttons()
