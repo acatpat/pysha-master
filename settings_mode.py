@@ -62,29 +62,88 @@ class SettingsMode(definitions.PyshaMode):
     def deactivate(self):
         self.set_all_upper_row_buttons_off()
 
+        # ⚠️ IMPORTANT : purger les index temporaires
+        if hasattr(self, "instrument_in_tmp_idx"):
+            self.instrument_in_tmp_idx = None
+
+        if hasattr(self, "instrument_out_tmp_idx"):
+            self.instrument_out_tmp_idx = None
+
     def check_for_delayed_actions(self):
         current_time = time.time()
-        
+
+        # ---------------------------------------------------------
+        # MIDI IN / OUT globaux (inchangé)
+        # ---------------------------------------------------------
         if self.app.midi_in_tmp_device_idx is not None:
-            # Means we are in the process of changing the MIDI in device
             if current_time - self.encoders_state[push2_python.constants.ENCODER_TRACK1_ENCODER]['last_message_received'] > definitions.DELAYED_ACTIONS_APPLY_TIME:
                 self.app.set_midi_in_device_by_index(self.app.midi_in_tmp_device_idx)
                 self.app.midi_in_tmp_device_idx = None
-        
+
         if self.app.midi_out_tmp_device_idx is not None:
-            
-            # Means we are in the process of changing the MIDI out device
             if current_time - self.encoders_state[push2_python.constants.ENCODER_TRACK3_ENCODER]['last_message_received'] > definitions.DELAYED_ACTIONS_APPLY_TIME:
                 self.app.set_midi_out_device_by_index(self.app.midi_out_tmp_device_idx)
                 self.app.midi_out_tmp_device_idx = None
 
-        # --- APPLY INSTRUMENT MIDI OUT CHANGE (nouveau système) ---
+        # ---------------------------------------------------------
+        # PROTECTION : si on n'est PAS en page MIDI, on purge
+        # pour empêcher les réassignations automatiques.
+        # ---------------------------------------------------------
+        if self.current_page != 1:
+            if hasattr(self, "instrument_in_tmp_idx"):
+                self.instrument_in_tmp_idx = None
+            if hasattr(self, "instrument_out_tmp_idx"):
+                self.instrument_out_tmp_idx = None
+            return
+
+        # ---------------------------------------------------------
+        # APPLY INSTRUMENT MIDI IN CHANGE  (nouveau bloc ajouté)
+        # ---------------------------------------------------------
         if (
-            self.current_page == 1                             # <── IMPORTANT !
-            and hasattr(self, "instrument_out_tmp_idx")
+            hasattr(self, "instrument_in_tmp_idx")
+            and self.instrument_in_tmp_idx is not None
+        ):
+            instr = self.app.track_selection_mode.get_current_track_info()["instrument_short_name"]
+
+            available = [
+                n for n in self.app.synths_midi.scan_available_ports()["in"]
+                if "Ableton Push" not in n
+                and "RtMidi" not in n
+                and "Through" not in n
+            ]
+
+            # Index → nom
+            if self.instrument_in_tmp_idx < 0:
+                in_name = None
+            else:
+                in_name = available[self.instrument_in_tmp_idx]
+
+            # Conserver OUT existant
+            old_out = self.app.synths_midi.instrument_midi_ports.get(instr, {}).get("out")
+            out_name = old_out.name if old_out else None
+
+            # Appliquer IN
+            self.app.synths_midi.assign_instrument_ports(instr, in_name, out_name)
+
+            # Mise à jour UI
+            self.app.synth_window.update_port_from_external_change(
+                instr,
+                in_name=in_name
+            )
+
+            # RESET
+            self.instrument_in_tmp_idx = None
+
+            # éviter double-application dans le même frame
+            return
+
+        # ---------------------------------------------------------
+        # APPLY INSTRUMENT MIDI OUT CHANGE (ton bloc existant)
+        # ---------------------------------------------------------
+        if (
+            hasattr(self, "instrument_out_tmp_idx")
             and self.instrument_out_tmp_idx is not None
         ):
-
             instr = self.app.track_selection_mode.get_current_track_info()['instrument_short_name']
 
             available = [
@@ -94,31 +153,29 @@ class SettingsMode(definitions.PyshaMode):
                 and "Through" not in n
             ]
 
-            # Convert index → nom port
             if self.instrument_out_tmp_idx < 0:
                 out_name = None
             else:
                 out_name = available[self.instrument_out_tmp_idx]
 
-            # Conserver IN existant
+            # Conserver IN
             old_in = self.app.synths_midi.instrument_midi_ports.get(instr, {}).get("in")
             in_name = old_in.name if old_in else None
 
-            # Appliquer changement
+            # Appliquer OUT
             self.app.synths_midi.assign_instrument_ports(instr, in_name, out_name)
 
-            # Mise à jour visuelle
+            # UI
             self.app.synth_window.update_port_from_external_change(
                 instr,
                 out_name=out_name
             )
 
-
-            # Reset
+            # RESET
             self.instrument_out_tmp_idx = None
 
-            # Sécurité : ne jamais réappliquer pendant le même frame
             return
+
 
 
 

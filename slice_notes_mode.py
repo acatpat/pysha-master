@@ -31,6 +31,8 @@ class SliceNotesMode(MelodicMode):
 
 
     def update_pads(self):
+        if not self.app.is_mode_active(self):
+            return
         color_matrix = []
         for i in range(0, 8):
             row_colors = []

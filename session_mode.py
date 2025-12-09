@@ -141,6 +141,8 @@ class SessionMode(MelodicMode):
     # UPDATE PADS / BUTTONS
     # -----------------------------------------------------------
     def update_pads(self):
+        if not self.app.is_mode_active(self):
+            return
         print("[DEBUG SESSION] update_pads called")
         """
         Mise à jour des pads avec animations :
