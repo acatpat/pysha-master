@@ -449,10 +449,23 @@ class SequencerController:
                     try:
                         # on passe aussi num_steps au cas où Session en a besoin
                         cb(next_step, is_measure_start, num_steps)
+            
                     except Exception:
                         pass
+        
         except Exception:
             pass
+
+        # --- SESSION MODE TOUJOURS NOTIFIÉ ---
+        session = getattr(self.app, "session_mode", None)
+        if session:
+            cb = getattr(session, "on_sequencer_step", None)
+            if cb:
+                try:
+                    cb(next_step, is_measure_start, num_steps)
+                except Exception:
+                    pass
+
 
         # --- Feedback Push 2 du SEQUENCER (Rhythmic) ---
         # La méthode elle-même vérifie déjà si Rhythmic est actif
