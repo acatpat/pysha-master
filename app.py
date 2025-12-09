@@ -771,22 +771,32 @@ class PyshaApp(object):
         # Then, send message to the melodic/rhythmic active modes so the notes are shown in pads/keys
         if msg.type == 'note_on' or msg.type == 'note_off':
             track_midi_channel = self.track_selection_mode.get_current_track_info()['midi_channel']
-            if msg.channel == track_midi_channel - 1:  # msg.channel is 0-indexed
-                for mode in self.active_modes:
-                    # Melodic, Rhythmic ET Session reçoivent les notes du port "notes_midi_in"
-                    if mode in (self.melodic_mode, self.rhyhtmic_mode, self.session_mode):
 
-                        mode.on_midi_in(msg, source=self.notes_midi_in.name)
+            for mode in self.active_modes:
+                # Melodic, Rhythmic ET Session reçoivent les notes du port "notes_midi_in"
+                if mode in (self.melodic_mode, self.rhyhtmic_mode, self.session_mode):
 
-                        # Lumi output pour les modes qui en ont un
-                        lumi = getattr(mode, "lumi_midi_out", None)
-                        if lumi is not None:
-                            lumi.send(msg)
-                        else:
-                            # Si le mode utilise LUMI mais n'est pas initialisé
-                            if hasattr(mode, "last_time_tried_initialize_lumi"):
-                                if time.time() - mode.last_time_tried_initialize_lumi > 5:
-                                    mode.init_lumi_midi_out()
+                    # --- Filtrage par canal UNIQUEMENT pour Melodic / Rhythmic ---
+                    if mode is not self.session_mode:
+                        # msg.channel est 0-indexé, track_midi_channel est 1–16
+                        if msg.channel != track_midi_channel - 1:
+                            continue  # ne pas envoyer à ce mode
+
+                    # À partir d’ici : 
+                    # - soit c’est SessionMode (pas de filtre canal)
+                    # - soit c’est Melodic/Rhythmic avec canal correspondant
+
+                    mode.on_midi_in(msg, source=self.notes_midi_in.name)
+
+                    # Lumi output pour les modes qui en ont un
+                    lumi = getattr(mode, "lumi_midi_out", None)
+                    if lumi is not None:
+                        lumi.send(msg)
+                    else:
+                        # Si le mode utilise LUMI mais n'est pas initialisé
+                        if hasattr(mode, "last_time_tried_initialize_lumi"):
+                            if time.time() - mode.last_time_tried_initialize_lumi > 5:
+                                mode.init_lumi_midi_out()
 
     def add_display_notification(self, text):
         self.notification_text = text
