@@ -460,7 +460,7 @@ class SequencerController:
                         for ev in clip.data:
                             if ev.get("step") == prev_step:
                                 try:
-                                    instr = app.track_selection_mode.get_current_track_instrument_short_name()
+                                    instr = app.track_selection_mode.tracks_info[c]['instrument_short_name']
                                     app.synths_midi.send_note_off(instr, ev["note"])
                                 except:
                                     pass
@@ -493,7 +493,7 @@ class SequencerController:
 
 
                                 try:
-                                    instr = app.track_selection_mode.get_current_track_instrument_short_name()
+                                    instr = app.track_selection_mode.tracks_info[c]['instrument_short_name']
                                     print(f"[SESSION] SEND NOTE_ON → instr={instr}, note={note}, vel={vel}")
 
                                     app.synths_midi.send_note_on(instr, note, vel)
