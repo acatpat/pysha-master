@@ -73,10 +73,16 @@ class Synths_Midi:
         self.midi_in_ports = {}
         self.midi_out_ports = {}
 
+        # À mettre dans __init__ si pas déjà fait :
+        self._opened_in_ports = {}
+        self._opened_out_ports = {}
+
         # mapping instrument -> ports mido
         self.instrument_midi_ports = {}
         # Noms de ports déclarés par l’utilisateur (UI ou preset)
         self.instrument_port_names = {}
+
+        self._in_listeners = []  # liste de callbacks multiples
 
 
         # callback clock → sequencer
@@ -106,99 +112,95 @@ class Synths_Midi:
         }
 
 
-    def open_in_port(self, name):
-        available = [
-            n for n in mido.get_input_names()
-            if "Ableton Push" not in n
-            and "RtMidi" not in n
-            and "Through" not in n
-        ]
+    # -----------------------------------------------------------
+    #  PORT CACHE GLOBAL  (PARTAGE A)
+    # -----------------------------------------------------------
 
-        if name is not None:
-            try:
-                full_name = [n for n in available if name in n][0]
-            except IndexError:
-                full_name = None
+    # À mettre dans __init__ si pas déjà fait :
+    # self._opened_in_ports = {}
+    # self._opened_out_ports = {}
 
-            if full_name:
-                if name in self.midi_in_ports:
-                    try:
-                        self.midi_in_ports[name].callback = None
-                    except:
-                        pass
+    def open_in_port(self, port_name):
+        """
+        Ouvre réellement un port MIDI IN seulement une fois
+        et l'enregistre avec un callback unique qui renvoie
+        tout vers app.midi_in_router(msg, port_name).
+
+        - Même port partagé par plusieurs instruments = OK
+          (un seul callback niveau MIDO, dispatch côté app).
+        """
+        if not port_name:
+            return None
+
+        # 1) Déjà ouvert → réutiliser
+        if port_name in self._opened_in_ports:
+            print(f"[MIDI] Reusing already open IN port '{port_name}'")
+            return self._opened_in_ports[port_name]
+
+        # 2) Ouverture réelle
+        try:
+            p = mido.open_input(port_name)
+            print(f"[MIDI] Opening IN port '{port_name}'")
+        except Exception as e:
+            print(f"[MIDI] ERROR opening IN '{port_name}': {e}")
+            return None
+
+        # 3) Cache interne
+        self._opened_in_ports[port_name] = p
+
+        # 4) Référence dans midi_in_ports (utilisée par midi_in_router)
+        self.midi_in_ports[port_name] = p
+
+        # 5) Callback unique → route vers app.midi_in_router
+        if self.app is not None:
+            def _cb(msg, name=port_name):
                 try:
-                    port = mido.open_input(full_name)
-                    port.callback = self._generic_midi_in_callback
-                    self.midi_in_ports[name] = port
-                    print(f'Receiving MIDI IN from "{full_name}"')
-                except IOError:
-                    print(f'Could not open MIDI IN "{full_name}"')
-        else:
-            if name in self.midi_in_ports:
-                try:
-                    self.midi_in_ports[name].callback = None
-                    self.midi_in_ports[name].close()
-                except:
+                    # Nouveau système : routeur côté app
+                    if hasattr(self.app, "midi_in_router"):
+                        self.app.midi_in_router(msg, name)
+                    # Old fallback si jamais tu réutilises incoming_midi_callback ailleurs
+                    elif self.incoming_midi_callback:
+                        self.incoming_midi_callback(msg)
+                except Exception:
                     pass
-                del self.midi_in_ports[name]
 
-        return self.midi_in_ports.get(name, None)
+            p.callback = _cb
+
+        return p
 
 
-    def open_out_port(self, name):
-        available = [
-            n for n in mido.get_output_names()
-            if "Ableton Push" not in n
-            and "RtMidi" not in n
-            and "Through" not in n
-        ]
-        available += ["Virtual"]
+    def open_out_port(self, port_name):
+        """
+        Ouvre réellement un port MIDI OUT seulement une fois.
+        Retourne toujours la même instance si déjà ouverte.
+        """
+        # 1) Déjà ouvert → réutiliser
+        if port_name in self._opened_out_ports:
+            print(f"[MIDI] Reusing already open OUT port '{port_name}'")
+            return self._opened_out_ports[port_name]
 
-        if name is not None:
-            try:
-                full_name = [n for n in available if name in n][0]
-            except IndexError:
-                full_name = None
-
-            if full_name:
-                # réutilisation si déjà ouvert
-                for alias, existing in self.midi_out_ports.items():
-                    if hasattr(existing, "name") and existing.name == full_name:
-                        self.midi_out_ports[name] = existing
-                        print(f'[MIDI] Reusing already open OUT port "{full_name}" for alias "{name}" (alias original: "{alias}")')
-                        return existing
-
-                # fermer ancien port
-                if name in self.midi_out_ports:
-                    try:
-                        self.midi_out_ports[name].close()
-                    except:
-                        pass
-
-                # tentative d'ouverture
-                try:
-                    if full_name == "Virtual":
-                        port = mido.open_output(full_name, virtual=True)
-                    else:
-                        port = mido.open_output(full_name)
-                    self.midi_out_ports[name] = port
-                    print(f'Will send MIDI OUT to "{full_name}"')
-                except IOError:
-                    print(f'Could not open MIDI OUT "{full_name}"')
-        else:
-            if name in self.midi_out_ports:
-                try:
-                    self.midi_out_ports[name].close()
-                except:
-                    pass
-                del self.midi_out_ports[name]
-
-        return self.midi_out_ports.get(name, None)
+        # 2) Sinon ouvrir pour de vrai
+        try:
+            p = mido.open_output(port_name)
+            self._opened_out_ports[port_name] = p
+            print(f"[MIDI] Opening OUT port '{port_name}'")
+            return p
+        except Exception as e:
+            print(f"[MIDI] ERROR opening OUT '{port_name}': {e}")
+            return None
 
 
     def _generic_midi_in_callback(self, msg):
         if self.incoming_midi_callback:
             self.incoming_midi_callback(msg)
+
+
+    def _input_dispatcher(self, msg):
+        for cb in list(self._in_listeners):
+            try:
+                cb(msg)
+            except Exception:
+                pass
 
 
     # -----------------------------------------------------------

@@ -2,37 +2,20 @@ import definitions
 import push2_python.constants
 from melodic_mode import MelodicMode
 
-# ============================================================================
-# SESSION MODE (Playtime-like)
-# ============================================================================
-# Structure vide, conforme à la charte :
-# - aucune simplification
-# - aucune logique modifiée dans les autres modes
-# - uniquement la base nécessaire
-# - tout le futur code SessionMode restera ici
-# ============================================================================
-
 
 class Clip:
-    """
-    Un clip MIDI avec 4 états:
-    - empty
-    - playing
-    - recording
-    - queued (attente démarrage)
-    """
     STATE_EMPTY = 0
     STATE_PLAYING = 1
     STATE_RECORDING = 2
     STATE_QUEUED = 3
-    STATE_QUEUED_RECORD = 4      # appui sur pad vide → enregistre à prochaine mesure
-    STATE_WAIT_END_RECORD = 5    # ré-appui pendant enregistrement → arrêter à prochaine mesure
-
+    STATE_QUEUED_RECORD = 4
+    STATE_WAIT_END_RECORD = 5
 
     def __init__(self):
         self.state = Clip.STATE_EMPTY
-        self.data = []    # placeholder pour notes, steps ou events
-        self.length = 16  # par défaut
+        self.data = []
+        self.length = 16
+        self.last_step_notes = []
 
     def clear(self):
         self.data = []
@@ -40,25 +23,7 @@ class Clip:
         self.last_step_notes = []
 
 
-    def set_playing(self):
-        self.state = Clip.STATE_PLAYING
-
-    def set_recording(self):
-        self.state = Clip.STATE_RECORDING
-
-    def set_queued(self):
-        self.state = Clip.STATE_QUEUED
-
-    def set_empty(self):
-        self.state = Clip.STATE_EMPTY
-
-
-
 class ClipMatrix:
-    """
-    Matrice 8x8 de clips, comme Ableton / Playtime.
-    Aucune logique encore — structure vide conforme à la charte.
-    """
     def __init__(self, rows=8, cols=8):
         self.rows = rows
         self.cols = cols
@@ -67,13 +32,7 @@ class ClipMatrix:
     def get_clip(self, row, col):
         return self.clips[row][col]
 
-
     def to_color_matrix(self):
-        """
-        Version simple, SANS animations.
-        Utilisée si un jour on veut juste une matrice de couleurs.
-        SessionMode.update_pads reste la source principale pour le Push.
-        """
         matrix = []
         for r in range(self.rows):
             row_colors = []
@@ -91,7 +50,7 @@ class ClipMatrix:
                 elif clip.state == Clip.STATE_WAIT_END_RECORD:
                     color = definitions.RED
                 else:
-                    color = definitions.GRAY_DARK  # EMPTY visible
+                    color = definitions.GRAY_DARK
 
                 row_colors.append(color)
 
@@ -102,63 +61,64 @@ class ClipMatrix:
 
 class SessionMode(MelodicMode):
 
-    """
-    Nouveau mode “Session” (Playtime-like).
-    Implémentation vide, étape par étape.
-    Aucun impact sur les autres modes.
-    """
-
     def __init__(self, app, settings=None):
         super().__init__(app, settings=settings)
 
-        #self.xor_group = 'pads'
-        
         self.clips = ClipMatrix(8, 8)
-        self.current_page = 0  # pour expansion future (banques)
-
+        self.current_page = 0
         self.shift_is_held = False
 
+
+    # ----------------------------------------------------------------------
+    #  FONCTION AJOUTÉE : coupe toutes les notes d'un instrument immédiatement
+    # ----------------------------------------------------------------------
+    def _send_all_notes_off_for_track(self, track_col):
+        """
+        Envoie note_off sur 0–127 pour l’instrument de la colonne (piste) donnée.
+        Appelé lors d’un STOP clip pour éviter les notes bloquées.
+        """
+        try:
+            tracks = getattr(self.app.track_selection_mode, "tracks_info", [])
+            if track_col >= len(tracks):
+                return
+
+            instr = tracks[track_col].get("instrument_short_name")
+            if not instr:
+                return
+
+            for n in range(0, 128):
+                self.app.synths_midi.send_note_off(instr, n, velocity=0)
+
+            print(f"[SESSION] ALL NOTES OFF sent for instrument '{instr}'")
+        except Exception as e:
+            print(f"[SESSION] ERROR ALL NOTES OFF: {e}")
 
 
     # -----------------------------------------------------------
     # ACTIVATION / DÉSACTIVATION
     # -----------------------------------------------------------
-
-
     def activate(self):
         super().activate()
-        # Le SessionMode gère lui-même son feedback → pas d’appel au sequencer controller
         self.update_pads()
-
 
     def deactivate(self):
         super().deactivate()
-        # Forcer update des pads à la sortie du mode
         self.app.pads_need_update = True
         self.app.buttons_need_update = True
 
+
     # -----------------------------------------------------------
-    # UPDATE PADS / BUTTONS
+    # UPDATE PADS
     # -----------------------------------------------------------
     def update_pads(self):
         if not self.app.is_mode_active(self):
             return
-        print("[DEBUG SESSION] update_pads called")
-        """
-        Mise à jour des pads avec animations :
-        - EMPTY + no data          → gris
-        - EMPTY + data (clip)      → couleur de la piste (clip existe mais à l’arrêt)
-        - QUEUED                   → jaune clignotant
-        - QUEUED_RECORD            → orange clignotant (en attente d’enregistrement)
-        - RECORDING                → rouge pulsé
-        - WAIT_END_RECORD          → rouge clignotant (en attente de fin d’enregistrement)
-        - PLAYING                  → couleur de piste pulsée
-        """
+
         push = self.push
         tsm = self.app.track_selection_mode
         tracks = getattr(tsm, "tracks_info", None)
+
         if not tracks or len(tracks) < 8:
-            # sécurité : empêche les pads de rester gris
             track_color = definitions.GRAY_DARK
             tracks = [{} for _ in range(8)]
 
@@ -166,118 +126,92 @@ class SessionMode(MelodicMode):
             for c in range(8):
                 clip = self.clips.get_clip(r, c)
 
-                # Couleur de piste sécurisée
                 if 0 <= c < len(tracks):
                     track_color = tracks[c].get('color', definitions.GRAY_DARK)
                 else:
                     track_color = definitions.GRAY_DARK
 
-                # --- PAD AVEC CLIP MAIS ÉTAT EMPTY (STOP) ---
                 if clip.state == Clip.STATE_EMPTY and len(clip.data) > 0:
                     color = track_color
                     anim = None
-
-                # --- PAD VIDE, AUCUN CLIP ---
                 elif clip.state == Clip.STATE_EMPTY:
                     color = definitions.GRAY_DARK
                     anim = None
-
-                # --- CLIP EN COURS DE LECTURE À LA PROCHAINE MESURE ---
                 elif clip.state == Clip.STATE_QUEUED:
                     color = definitions.YELLOW
                     anim = push2_python.constants.ANIMATION_BLINKING_HALF
-
-                # --- ENREGISTREMENT PROGRAMMÉ (prochaine mesure) ---
                 elif clip.state == Clip.STATE_QUEUED_RECORD:
                     color = definitions.ORANGE
                     anim = push2_python.constants.ANIMATION_BLINKING_HALF
-
-                # --- EN COURS D’ENREGISTREMENT ---
                 elif clip.state == Clip.STATE_RECORDING:
                     color = definitions.RED
                     anim = push2_python.constants.ANIMATION_PULSING_QUARTER
-
-                # --- ENREGISTREMENT VA S’ARRÊTER À LA PROCHAINE MESURE ---
                 elif clip.state == Clip.STATE_WAIT_END_RECORD:
                     color = definitions.RED
                     anim = push2_python.constants.ANIMATION_BLINKING_HALF
-
-                # --- LECTURE CLIP ---
                 elif clip.state == Clip.STATE_PLAYING:
                     color = track_color
                     anim = push2_python.constants.ANIMATION_PULSING_HALF
-
                 else:
                     color = definitions.GRAY_DARK
                     anim = None
 
                 if anim is None:
-                    anim = push2_python.constants.ANIMATION_STATIC  # = 0
+                    anim = push2_python.constants.ANIMATION_STATIC
 
-                push.pads.set_pad_color((r, c), color=color, animation=anim)
+                push.pads.set_pad_color((r, c), color, anim)
 
 
+    # -----------------------------------------------------------
+    #  STEP CALLBACK (PLAYBACK / RECORD)
+    # -----------------------------------------------------------
     def on_sequencer_step(self, current_step, is_measure_start, num_steps):
-        """
-        Appelé à chaque step par SequencerController.
-        Gère :
-        - démarrage/arrêt d’enregistrement (QUEUED_RECORD / WAIT_END_RECORD)
-        - passage QUEUED → PLAYING
-        - NOTE ON / NOTE OFF des clips PLAYING
-        """
         app = self.app
         tsm = app.track_selection_mode
         tracks = getattr(tsm, "tracks_info", [])
 
-        # -----------------------------
-        # 1) DÉMARRER / ARRÊTER ENREGISTREMENT
-        # -----------------------------
         changed_states = False
 
+        # --- START/STOP RECORD (à la mesure) ---
         for r in range(8):
             for c in range(8):
                 clip = self.clips.get_clip(r, c)
 
-                # START RECORD (à la prochaine mesure)
                 if clip.state == Clip.STATE_QUEUED_RECORD and is_measure_start:
                     clip.state = Clip.STATE_RECORDING
                     clip.data = []
                     clip.length = 0
-                    print(f"[SESSION] START RECORDING ({r},{c}) at step={current_step}")
+                    print(f"[SESSION] START RECORDING ({r},{c}) step={current_step}")
                     changed_states = True
 
-                # STOP RECORD (à la prochaine mesure)
                 if clip.state == Clip.STATE_WAIT_END_RECORD and is_measure_start:
                     clip.state = Clip.STATE_QUEUED
-                    # clip.length est déjà mis à jour au fil des NOTE_OFF
-                    print(f"[SESSION] STOP RECORD ({r},{c}) at step={current_step} length={clip.length}")
+                    print(f"[SESSION] STOP RECORD ({r},{c}) step={current_step}")
+
+                    # --- AJOUT : couper toutes les notes de ce clip ---
+                    self._send_all_notes_off_for_track(c)
+
                     changed_states = True
 
         if changed_states:
             app.pads_need_update = True
 
-        # -----------------------------
-        # 2) NOTE OFF : end == current_step
-        # -----------------------------
+        # --- NOTE OFF playback ---
         for r in range(8):
             for c in range(8):
                 clip = self.clips.get_clip(r, c)
                 if clip.state == Clip.STATE_PLAYING:
                     for ev in clip.data:
-                        end = ev.get("end")
-                        if end is not None and end == current_step:
+                        if ev.get("end") == current_step:
                             try:
-                                instr = tracks[c]['instrument_short_name'] if c < len(tracks) else None
-                                if instr:
-                                    note = ev["note"]
-                                    print(f"[SESSION-PLAY] NOTE_OFF instr={instr} note={note} step={current_step}")
-                                    app.synths_midi.send_note_off(instr, note)
-                            except Exception as e:
-                                print(f"[SESSION-PLAY] NOTE_OFF ERROR: {e}")
+                                instr = tracks[c]['instrument_short_name']
+                                note = ev["note"]
+                                print(f"[SESSION-PLAY] NOTE_OFF {note}")
+                                app.synths_midi.send_note_off(instr, note)
+                            except:
+                                pass
 
-        # -----------------------------
-        # 3) QUEUED → PLAYING au début de boucle
-        # -----------------------------
+        # --- QUEUED → PLAYING au début boucle ---
         if current_step == 0:
             changed = False
             for r in range(8):
@@ -289,44 +223,25 @@ class SessionMode(MelodicMode):
             if changed:
                 app.pads_need_update = True
 
-        # -----------------------------
-        # 4) NOTE ON : start == current_step
-        # -----------------------------
+        # --- NOTE ON playback ---
         for r in range(8):
             for c in range(8):
                 clip = self.clips.get_clip(r, c)
                 if clip.state == Clip.STATE_PLAYING:
                     for ev in clip.data:
-                        start = ev.get("start")
-                        if start is not None and start == current_step:
-                            note = ev["note"]
-                            vel = ev.get("velocity", 100)
+                        if ev.get("start") == current_step:
                             try:
-                                instr = tracks[c]['instrument_short_name'] if c < len(tracks) else None
-                                if instr:
-                                    print(f"[SESSION-PLAY] NOTE_ON instr={instr} note={note} vel={vel} step={current_step}")
-                                    app.synths_midi.send_note_on(instr, note, vel)
-                            except Exception as e:
-                                print(f"[SESSION-PLAY] NOTE_ON ERROR: {e}")
+                                instr = tracks[c]['instrument_short_name']
+                                note = ev["note"]
+                                vel = ev.get("velocity", 100)
+                                print(f"[SESSION-PLAY] NOTE_ON {note}")
+                                app.synths_midi.send_note_on(instr, note, vel)
+                            except:
+                                pass
 
-
-
-    def update_buttons(self):
-        """
-        Placeholder — on pourra associer transport, rec, etc.
-        Pour l’instant, rien n’est modifié.
-        """
-        pass
-
-    def clear_buttons(self):
-        """
-        Éteint les boutons utilisés par ce mode.
-        """
-        # Aucun bouton défini pour l’instant
-        pass
 
     # -----------------------------------------------------------
-    # GESTION DES PADS PUSH2
+    # GESTION PADS
     # -----------------------------------------------------------
     def on_pad_pressed(self, pad_n, pad_ij, velocity):
         if velocity == 0:
@@ -334,123 +249,84 @@ class SessionMode(MelodicMode):
 
         row, col = pad_ij
         clip = self.clips.get_clip(row, col)
-        # Interdit d'écraser un clip existant
+
+        # --- Clip existant : PLAY/STOP ---
         if len(clip.data) > 0:
-            # seul le PLAY/STOP est autorisé
             if clip.state == Clip.STATE_PLAYING:
                 clip.state = Clip.STATE_EMPTY
+                print(f"[SESSION] Pad ({row},{col}) → STOP")
+
+                # --- AJOUT : note off immédiat ---
+                self._send_all_notes_off_for_track(col)
+
             else:
                 clip.state = Clip.STATE_QUEUED
             self.app.pads_need_update = True
             return True
 
-
-        # --- 1) EMPTY → en attente enregistrement (prochaine mesure) ---
+        # --- EMPTY → enregistrement à prochaine mesure ---
         if clip.state == Clip.STATE_EMPTY:
             clip.state = Clip.STATE_QUEUED_RECORD
-            print(f"[SESSION] Pad ({row},{col}) → QUEUED_RECORD")
+            print(f"[SESSION] QUEUED_RECORD ({row},{col})")
             self.app.pads_need_update = True
             return True
 
-        # --- 2) RECORDING → stop à prochaine mesure ---
+        # --- RECORDING → stop à prochaine mesure ---
         if clip.state == Clip.STATE_RECORDING:
             clip.state = Clip.STATE_WAIT_END_RECORD
-            print(f"[SESSION] Pad ({row},{col}) → WAIT_END_RECORD")
-            self.app.pads_need_update = True
-            return True
-
-        # --- 3) PLAYING → STOP immédiat ---
-        if clip.state == Clip.STATE_PLAYING:
-            clip.state = Clip.STATE_EMPTY
-            print(f"[SESSION] Pad ({row},{col}) → EMPTY (stop)")
-            self.app.pads_need_update = True
-            return True
-
-        # --- 4) QUEUED_RECORD → annuler si re-appui ---
-        if clip.state == Clip.STATE_QUEUED_RECORD:
-            clip.state = Clip.STATE_EMPTY
-            print(f"[SESSION] Pad ({row},{col}) → EMPTY (cancel queued rec)")
+            print(f"[SESSION] WAIT_END_RECORD ({row},{col})")
             self.app.pads_need_update = True
             return True
 
         return False
 
-    # -----------------------------------------------------------
-    # GESTION DES BOUTONS PUSH2
-    # -----------------------------------------------------------
-    def on_button_pressed(self, button_name):
-        """
-        Placeholder : aucun bouton encore mappé.
-        """
-        return False
 
+    # -----------------------------------------------------------
+    # MIDI ENREGISTREMENT
+    # -----------------------------------------------------------
     def get_recording_clip(self):
-        """
-        Retourne le clip en train d’enregistrer, ou None.
-        (Il ne peut y en avoir qu’un à la fois car tu enregistres pad par pad.)
-        """
         for r in range(8):
             for c in range(8):
-                clip = self.clips.get_clip(r, c)
-                if clip.state == Clip.STATE_RECORDING:
-                    return clip
+                if self.clips.get_clip(r, c).state == Clip.STATE_RECORDING:
+                    return self.clips.get_clip(r, c)
         return None
 
     def on_midi_in(self, msg, source=None):
-        print("[SESSION] MIDI IN RECEIVED", msg)
-        """
-        Enregistre les notes avec durée :
-        - start = step du NOTE ON
-        - end   = step du NOTE OFF
-        Uniquement si un clip est en RECORDING.
-        """
-
-        # On ne fait rien s'il n'y a pas de clip en enregistrement
         clip = self.get_recording_clip()
         if clip is None:
             return False
 
-        # On ne gère que les notes
         if msg.type not in ("note_on", "note_off"):
             return False
 
-        # Récupérer le step courant du sequencer
         try:
             current_step = getattr(self.app.sequencer_window, "current_step", -1)
-        except Exception:
+        except:
             current_step = -1
-
         if current_step < 0:
             current_step = 0
 
-        # --- NOTE ON (vrai ON : velocity > 0) ---
         if msg.type == "note_on" and msg.velocity > 0:
-            ev = {
-                "note": msg.note,
-                "velocity": msg.velocity,
-                "start": current_step,
-                "end": None,
-            }
+            ev = {"note": msg.note, "velocity": msg.velocity, "start": current_step, "end": None}
             clip.data.append(ev)
-            print(f"[SESSION-REC] NOTE_ON note={msg.note} vel={msg.velocity} start={current_step}")
+            print(f"[SESSION-REC] NOTE_ON {msg.note}")
             return True
 
-        # --- NOTE OFF (note_off, ou note_on vel=0) ---
         if msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
-            # On cherche la dernière note ON sans 'end'
             for ev in reversed(clip.data):
                 if ev.get("note") == msg.note and ev.get("end") is None:
                     clip.length = max(clip.length, current_step+1)
                     ev["end"] = current_step
-
-                    print(f"[SESSION-REC] NOTE_OFF note={msg.note} end={current_step}")
+                    print(f"[SESSION-REC] NOTE_OFF {msg.note}")
                     break
             return True
 
         return False
 
 
-
+    # -----------------------------------------------------------
+    # BOUTONS (inchangé)
+    # -----------------------------------------------------------
     def on_button_pressed(self, button_name):
         if button_name == "Shift":
             self.shift_is_held = True

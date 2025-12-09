@@ -281,6 +281,25 @@ class SequencerController:
             pass
 
 
+        # ---------------------------------------------------------
+        # 4) **AJOUT : envoyer NOTE OFF pour éviter notes bloquées**
+        # ---------------------------------------------------------
+        try:
+            # Où envoyer ? → L’instrument choisi pour le séquenceur
+            instr = getattr(self.app.sequencer_window,
+                            "sequencer_output_instrument",
+                            None)
+
+            if instr:
+                for n in range(0, 128):
+                    self.app.synths_midi.send_note_off(instr, n, velocity=0)
+                print(f"[SEQ] All notes off sent to {instr}")
+            else:
+                print("[SEQ] No sequencer_output_instrument defined → skipping all-notes-off")
+
+        except Exception as e:
+            print(f"[SEQ] Error sending all-notes-off: {e}")
+
     # -------------------------------------------------------------------------
     # CHANGEMENT DE RÉSOLUTION (thread-safe depuis Push2)
     # -------------------------------------------------------------------------

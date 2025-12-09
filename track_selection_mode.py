@@ -140,7 +140,9 @@ class TrackSelectionMode(definitions.PyshaMode):
     def select_track(self, track_idx):
         # Selects a track and activates its melodic/rhythmic layout
         # Note that if this is called from a mode form the same xor group with melodic/rhythmic modes,
-        # that other mode will be deactivated.
+        # that other mode will be deactivated.    
+        track_idx = max(0, min(track_idx, len(self.tracks_info) - 1))
+
         self.selected_track = track_idx
         self.load_current_default_layout()
         self.clean_currently_notes_being_played()
