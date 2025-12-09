@@ -31,7 +31,11 @@ from main_controls_mode import MainControlsMode
 from midi_cc_mode import MIDICCMode
 from preset_selection_mode import PresetSelectionMode
 from ddrm_tone_selector_mode import DDRMToneSelectorMode
+from session_mode import SessionMode
 from midi_manager import Synths_Midi
+
+
+
 
 
 from controller.sequencer_controller import SequencerController
@@ -193,6 +197,8 @@ class PyshaApp(object):
         self.active_modes += [self.track_selection_mode, self.midi_cc_mode]
         self.track_selection_mode.select_track(self.track_selection_mode.selected_track)
         self.ddrm_tone_selector_mode = DDRMToneSelectorMode(self, settings=settings)
+
+        self.session_mode = SessionMode(self, settings=settings)
 
         self.settings_mode = SettingsMode(self, settings=settings)
 
@@ -632,15 +638,21 @@ class PyshaApp(object):
                     self.set_mode_for_xor_group(self.melodic_mode)
 
     def toggle_melodic_rhythmic_slice_modes(self):
+        print("ACTIVE MODES:", self.active_modes)
         if self.is_mode_active(self.melodic_mode):
             self.set_rhythmic_mode()
         elif self.is_mode_active(self.rhyhtmic_mode):
             self.set_slice_notes_mode()
         elif self.is_mode_active(self.slice_notes_mode):
+            # nouveau : passer en SessionMode
+            self.set_mode_for_xor_group(self.session_mode)
+        elif hasattr(self, "session_mode") and self.is_mode_active(self.session_mode):
+            # si SessionMode est actif, on revient à Melodic
             self.set_melodic_mode()
         else:
-            # If none of melodic or rhythmic or slice modes were active, enable melodic by default
+            # Si aucun des modes n'est actif, on repart sur Melodic
             self.set_melodic_mode()
+
 
     def set_melodic_mode(self):
         self.set_mode_for_xor_group(self.melodic_mode)
@@ -650,6 +662,9 @@ class PyshaApp(object):
 
     def set_slice_notes_mode(self):
         self.set_mode_for_xor_group(self.slice_notes_mode)
+
+    def set_session_mode(self):
+        self.set_mode_for_xor_group(self.session_mode)
 
     def set_pyramid_track_triggering_mode(self):
         self.set_mode_for_xor_group(self.pyramid_track_triggering_mode)

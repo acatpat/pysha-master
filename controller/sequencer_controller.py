@@ -1,4 +1,5 @@
 # controller/sequencer_controller.py
+from session_mode import Clip
 
 import definitions
 import mido
@@ -415,8 +416,8 @@ class SequencerController:
         else:
             next_step = (current_step + 1) % num_steps
 
+        # Mettre à jour le step dans la fenêtre
         self.window.current_step = next_step
-
 
         # Appliquer le nouveau highlight
         if hasattr(self.window, "highlight_step"):
@@ -425,7 +426,7 @@ class SequencerController:
             except Exception:
                 pass
 
-        # Jouer les notes actives de tous les pads sur ce step
+        # Jouer les notes actives du séquenceur normal
         target = getattr(self.window, "sequencer_target", None)
         if target is not None and hasattr(target, "play_step"):
             for pad_index, pad_steps in enumerate(self.model):
@@ -435,9 +436,74 @@ class SequencerController:
                     except Exception:
                         pass
 
+        # -------------------------------------
+        # SESSION MODE : moteur de playback
+        # -------------------------------------
+        app = self.window.app
+
+        if hasattr(app, "session_mode"):
+            sm = app.session_mode
+
+            # IMPORTANT :
+            # Playback doit utiliser le même step que l'enregistrement.
+            # Donc on relit le step réel ici :
+            current_step = getattr(self.window, "current_step", -1)
+            prev_step = current_step - 1
+            if prev_step < 0:
+                prev_step = num_steps - 1
+
+            # 1) NOTE OFF (clips PLAYING du step précédent)
+            for r in range(8):
+                for c in range(8):
+                    clip = sm.clips.get_clip(r, c)
+                    if clip.state == Clip.STATE_PLAYING:
+                        for ev in clip.data:
+                            if ev.get("step") == prev_step:
+                                try:
+                                    instr = app.track_selection_mode.get_current_track_instrument_short_name()
+                                    app.synths_midi.send_note_off(instr, ev["note"])
+                                except:
+                                    pass
+
+            # 2) QUEUED → PLAYING (début de boucle)
+            if current_step == 0:
+                for r in range(8):
+                    for c in range(8):
+                        clip = sm.clips.get_clip(r, c)
+                        if clip.state == Clip.STATE_QUEUED:
+                            clip.state = Clip.STATE_PLAYING
+                app.pads_need_update = True
+
+            # 3) NOTE ON (lecture des clips PLAYING au step courant)
+            for r in range(8):
+                for c in range(8):
+                    clip = sm.clips.get_clip(r, c)
+                    if clip.state == Clip.STATE_PLAYING:
+
+                        # DEBUG : clip actif
+                        print(f"[SESSION] Clip PLAYING → ({r},{c})  current_step={current_step}")
+
+                        for ev in clip.data:
+                            if ev.get("step") == current_step:
+                                note = ev["note"]
+                                vel = ev.get("velocity", 100)
+
+                                # DEBUG EVENT TROUVÉ
+                                print(f"[SESSION] EVENT FOUND → note={note}, vel={vel}, step={current_step}")
+
+
+                                try:
+                                    instr = app.track_selection_mode.get_current_track_instrument_short_name()
+                                    print(f"[SESSION] SEND NOTE_ON → instr={instr}, note={note}, vel={vel}")
+
+                                    app.synths_midi.send_note_on(instr, note, vel)
+                                except Exception as e:
+                                    print(f"[SESSION] SEND ERROR: {e}")
+
         # Feedback Push 2
         self.update_push_feedback()
         print(f"[SEQ] advance_step → step {next_step}")
+
 
 
     def tick_from_clock_thread(self, event=None):
@@ -455,6 +521,19 @@ class SequencerController:
         if self._tick_count >= ticks_per_step:
             self._tick_count = 0
             self.advance_step()
+
+            # --- SESSION MODE: lancer clips QUEUED au début de la mesure ---
+            if hasattr(self.app, "session_mode"):
+                # début de mesure = current_step == 0
+                if self.current_step == 0:
+                    sm = self.app.session_mode
+                    for r in range(8):
+                        for c in range(8):
+                            clip = sm.clips.get_clip(r, c)
+                            if clip.state == Clip.STATE_QUEUED:
+                                clip.state = Clip.STATE_PLAYING
+                    self.app.pads_need_update = True
+
 
 
 
