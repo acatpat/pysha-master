@@ -320,32 +320,77 @@ class MIDICCMode(PyshaMode):
                 push2_python.constants.ENCODER_TRACK8_ENCODER,
             ].index(encoder_name)
 
-            if self.active_midi_control_ccs:
-                control = self.active_midi_control_ccs[encoder_num]
-                if control is None:
-                    return True  # sécurité : aucun CC sur cet encodeur
-                control.update_value(increment)
+            # Pas de contrôles actifs → rien à faire
+            if not self.active_midi_control_ccs:
+                return True
 
-                # --- SAMPLER MODE: intercept CC → control sampler volume instead of sending MIDI ---
-                instrument = self.get_current_track_instrument_short_name_helper()
-                if instrument == "SAMPLER":
-                    cc_value = control.value  # 0–127
+            control = self.active_midi_control_ccs[encoder_num]
+            if control is None:
+                return True
 
-                    try:
-                        # ex: "SMP36 VOL" → note = 36
-                        label = control.name
-                        note = int(label.replace("SMP", "").replace(" VOL", ""))
-                    except Exception:
-                        return True
+            # Met à jour la valeur (0–127) et envoie le CC (pour les instruments normaux)
+            control.update_value(increment)
 
-                    # Normalize 0–127 → 0.0–1.0
-                    volume = cc_value / 127.0
-                    self.app.sampler.set_sample_volume(note, volume)
+            # --- LOGIQUE SPÉCIALE POUR LE SAMPLER ---
+            instrument = self.get_current_track_instrument_short_name_helper()
+            if instrument != "SAMPLER":
+                # Pour tous les autres instruments, on reste dans le comportement normal
+                return True
 
-                    # STOP HERE : ne pas laisser midi_cc_mode envoyer du MIDI ensuite
-                    return True
+            # À partir d'ici : on intercepte les CC pour piloter le sampler interne
+            label = control.name           # ex: "SMP36 VOL", "SMP40 ATTACK", "SMP42 START", etc.
+            parts = label.split(" ")
+            if not parts:
+                return True
+
+            # On attend des labels du type "SMP36 XXX"
+            if not parts[0].startswith("SMP"):
+                return True
+
+            try:
+                note = int(parts[0].replace("SMP", ""))   # "SMP36" -> 36
+            except ValueError:
+                return True
+
+            # Normalisation 0.0 → 1.0
+            val_norm = control.value / 127.0
+
+            # Si pas de 2e mot, on considère que c'est un volume
+            param = parts[1] if len(parts) >= 2 else "VOL"
+
+            # --- Mapping paramètre → méthodes du Sampler ---
+            if param == "VOL":
+                # Page "VOLUMES 36–43", labels: "SMP36 VOL", etc.
+                self.app.sampler.set_sample_volume(note, val_norm)
+                return True
+
+            elif param == "ATTACK":
+                # 0–0.200s (200 ms) par sample
+                self.app.sampler.set_sample_attack(note, val_norm * 0.200)
+                return True
+
+            elif param == "RELEASE":
+                # 0–0.600s (600 ms) par sample
+                self.app.sampler.set_sample_release(note, val_norm * 0.600)
+                return True
+
+            elif param == "START":
+                # Trim start en pourcentage 0.0–1.0
+                self.app.sampler.set_sample_trim_start(note, val_norm)
+                return True
+
+            elif param == "END":
+                # Trim end en pourcentage 0.0–1.0
+                self.app.sampler.set_sample_trim_end(note, val_norm)
+                return True
+
+            elif param.startswith("PARAM"):
+                # Réservé pour usage futur → on consomme quand même l’encodeur
+                return True
 
         except ValueError:
+            # Encoder pas dans la liste (ex: Tempo Encoder déjà géré ailleurs)
             pass
 
+        # On renvoie toujours True : ce mode consomme l’encodeur quand il est actif
         return True
