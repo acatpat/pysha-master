@@ -16,6 +16,8 @@ import push2_python
 import threading
 import time
 from datetime import datetime
+from audio.sampler import Sampler
+
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
@@ -122,8 +124,14 @@ class PyshaApp(object):
         self.sequencer_window.sequencer_target = self.sequencer_target
 
         self.synths_midi = Synths_Midi()
+
         self.synths_midi.app = self
 
+        # --- Sampler audio chromatique ---
+        self.sampler = Sampler()
+        # Dossier attendu : ./samples/chromatic/36.wav, 37.wav, etc.
+        samples_folder = os.path.join(os.getcwd(), "samples", "chromatic")
+        self.sampler.load_folder(samples_folder)
 
         
         self.synth_window = SynthWindow(app=self)

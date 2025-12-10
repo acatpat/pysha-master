@@ -35,6 +35,14 @@ class SequencerTarget:
 
             note = self.start_note + pad_index
 
+
+            # --- Cas spécial : instrument SAMPLER -> lecture WAV, pas de MIDI ---
+            if instrument_name == "SAMPLER":
+                if hasattr(self.app, "sampler") and self.app.sampler is not None:
+                    self.app.sampler.play(note, velocity)
+                return
+
+
             # --- Envoi Note On ---
             self.app.synths_midi.send_note_on(instrument_name, note, velocity)
 

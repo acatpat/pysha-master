@@ -93,7 +93,7 @@ class SequencerWindow(QWidget):
         seq_instr_layout.addWidget(self.seq_instr_label)
 
         self.seq_instr_combo = QComboBox(self)
-        self.seq_instr_combo.addItems(["DDRM", "PRO800", "MINITAUR", "KIJIMI", "OCTATRACK", "SOURCE"])
+        self.seq_instr_combo.addItems(["DDRM", "PRO800", "MINITAUR", "KIJIMI", "OCTATRACK", "SAMPLER", "SOURCE"])
         self.seq_instr_combo.setCurrentText(self.sequencer_output_instrument)
 
         self.seq_instr_combo.currentTextChanged.connect(self.on_seq_output_instrument_changed)
