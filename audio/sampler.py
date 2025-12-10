@@ -1,6 +1,7 @@
 import os
-import threading
 import math
+import json
+import threading
 
 import numpy as np
 import sounddevice as sd
@@ -27,21 +28,22 @@ class Voice:
     """
     Une voix active (une note en cours de lecture).
     - sample : Sample
+    - sampler : référence au Sampler (pour lire global_volume, sample_volumes...)
+    - note : numéro MIDI
     - position : index flottant dans le sample
     - velocity : 0–127
     - attack_samples / release_samples : enveloppe simple
     """
-    def __init__(self, sample: Sample, velocity: int,
+    def __init__(self, sampler, sample: Sample, note: int, velocity: int,
                  attack_samples: int, release_samples: int):
+        self.sampler = sampler
         self.sample = sample
+        self.note = int(note)
         self.position = 0.0  # en frames
         self.velocity = max(0, min(127, int(velocity)))
         self.attack_samples = max(1, attack_samples)
         self.release_samples = max(1, release_samples)
         self.done = False
-
-        # Gain max basé sur la vélocité
-        self.base_gain = self.velocity / 127.0
 
     def mix_into(self, out_buffer: np.ndarray):
         """
@@ -90,8 +92,17 @@ class Voice:
 
         env = np.minimum(attack_env, release_env)
 
-        # Gain final (env * vélocité)
-        gain = (env * self.base_gain).astype(np.float32)
+        # Récupérer les paramètres actuels du sampler
+        # (global_volume et volume par sample peuvent changer à chaud)
+        with self.sampler.lock:
+            global_volume = self.sampler.global_volume
+            sample_volume = self.sampler.sample_volumes.get(self.note, 1.0)
+
+        # Gain de base à partir de la vélocité
+        base_gain = self.velocity / 127.0
+
+        # Gain final : env * velocity * volumes
+        gain = (env * base_gain * sample_volume * global_volume).astype(np.float32)
         gain = gain[:, np.newaxis]  # (length, 1) pour broadcast
 
         segment = segment[:length] * gain
@@ -111,9 +122,21 @@ class Sampler:
     """
     Sampler polyphonique "pro" pour Pysha :
     - Charge un dossier de WAV (nommés par numéro de note : 36.wav, 60.wav, etc.)
+    - Utilise en option un fichier volume.json pour :
+        * attack_ms / release_ms globaux
+        * volume global
+        * volume par sample
     - Polyphonie multiple
     - Enveloppe Attack/Release simple
-    - Compatible avec l'interface existante : load_folder(), play(note, velocity)
+    - API :
+        load_folder(path)
+        play(note, velocity)
+        set_global_attack(ms)
+        set_global_release(ms)
+        set_global_volume(vol)
+        set_sample_volume(note, vol)
+        get_sample_volume(note)
+        save_json_config(folder_path)
     """
 
     def __init__(self,
@@ -124,9 +147,16 @@ class Sampler:
         self.block_size = int(block_size)
         self.max_voices = int(max_voices)
 
-        self.samples = {}   # note_number -> Sample
-        self.voices = []    # liste de Voice actives
+        self.samples = {}         # note_number -> Sample
+        self.sample_volumes = {}  # note_number -> volume
+        self.voices = []          # liste de Voice actives
+
         self.lock = threading.Lock()
+
+        # Paramètres globaux (peuvent être modifiés à chaud)
+        self.default_attack_ms = 2.0
+        self.default_release_ms = 80.0
+        self.global_volume = 1.0  # 0.0–? (1.0 conseillé)
 
         # On fixe le nombre de canaux à 2 (stéréo) pour la sortie
         self.output_channels = 2
@@ -147,7 +177,7 @@ class Sampler:
             self.stream = None
 
     # -------------------------------------------------------------
-    # CHARGEMENT DES SAMPLES
+    # CHARGEMENT DES SAMPLES + CONFIG JSON
     # -------------------------------------------------------------
     def _resample_if_needed(self, data: np.ndarray, sr: int) -> np.ndarray:
         """
@@ -176,19 +206,93 @@ class Sampler:
 
         return resampled
 
+    def _default_config(self):
+        """
+        Crée une config par défaut en mémoire.
+        """
+        return {
+            "global": {
+                "attack_ms": self.default_attack_ms,
+                "release_ms": self.default_release_ms,
+                "volume": self.global_volume
+            },
+            "samples": {}
+        }
+
+    def _load_json_config(self, folder_path: str):
+        """
+        Charge volume.json si présent, sinon le crée avec des valeurs par défaut.
+
+        Format :
+        {
+          "global": {
+            "attack_ms": 5.0,
+            "release_ms": 120.0,
+            "volume": 1.0
+          },
+          "samples": {
+            "36": { "volume": 0.8 },
+            "37": { "volume": 0.5 }
+          }
+        }
+        """
+        config_path = os.path.join(folder_path, "volume.json")
+
+        cfg = None
+        if os.path.isfile(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                print(f"[SAMPLER] Config JSON chargée : {config_path}")
+            except Exception as e:
+                print(f"[SAMPLER] Erreur lecture volume.json : {e}")
+                cfg = None
+
+        if cfg is None:
+            # Créer une config par défaut et l'écrire
+            cfg = self._default_config()
+            try:
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                print(f"[SAMPLER] volume.json créé avec valeurs par défaut : {config_path}")
+            except Exception as e:
+                print(f"[SAMPLER] Erreur création volume.json : {e}")
+
+        global_cfg = cfg.get("global", {}) or {}
+        samples_cfg = cfg.get("samples", {}) or {}
+
+        # Appliquer les valeurs globales
+        with self.lock:
+            self.default_attack_ms = float(global_cfg.get("attack_ms", self.default_attack_ms))
+            self.default_release_ms = float(global_cfg.get("release_ms", self.default_release_ms))
+            self.global_volume = float(global_cfg.get("volume", self.global_volume))
+
+        return samples_cfg
+
     def load_folder(self, folder_path: str):
         """
         Charge tous les WAV d'un dossier, dont le nom de fichier est un numéro MIDI.
         Exemple :
             36.wav -> note 36
             60.wav -> note 60
-        """
 
+        Et lit volume.json (créé si absent) pour :
+            - attack_ms / release_ms globaux
+            - volume global
+            - volume par sample
+        """
         if not os.path.isdir(folder_path):
             print(f"[SAMPLER] Dossier introuvable : {folder_path}")
             return
 
+        # D'abord : charger (ou créer) la config JSON
+        samples_cfg = self._load_json_config(folder_path)
+
         count = 0
+        with self.lock:
+            self.samples.clear()
+            self.sample_volumes.clear()
+
         for filename in os.listdir(folder_path):
             if not filename.lower().endswith(".wav"):
                 continue
@@ -211,7 +315,14 @@ class Sampler:
             data = self._resample_if_needed(np.array(data), sr)
             sample = Sample(data, self.sample_rate)
 
-            self.samples[note] = sample
+            # Volume par sample depuis le JSON (sinon 1.0)
+            sample_cfg = samples_cfg.get(str(note), {}) or {}
+            vol = float(sample_cfg.get("volume", 1.0))
+
+            with self.lock:
+                self.samples[note] = sample
+                self.sample_volumes[note] = vol
+
             count += 1
 
         print(f"[SAMPLER] {count} samples chargés depuis {folder_path}")
@@ -220,31 +331,40 @@ class Sampler:
     # LECTURE DES NOTES
     # -------------------------------------------------------------
     def play(self, note: int, velocity: int = 127,
-             attack_ms: float = 2.0,
-             release_ms: float = 80.0):
+             attack_ms: float | None = None,
+             release_ms: float | None = None):
         """
         Joue une note :
         - note : numéro MIDI
         - velocity : 0–127
-        - attack_ms / release_ms : enveloppe simple (fade in / fade out)
+        - attack_ms / release_ms : si None → utilise les valeurs globales
         """
         if self.stream is None:
             # Aucune sortie audio dispo
             return
 
-        sample = self.samples.get(int(note))
+        with self.lock:
+            sample = self.samples.get(int(note))
+
         if sample is None:
             # Aucun sample pour cette note → silence
             return
 
-        attack_samples = int(self.sample_rate * (attack_ms / 1000.0))
-        release_samples = int(self.sample_rate * (release_ms / 1000.0))
+        # Si pas de valeurs explicites, on utilise les valeurs globales
+        with self.lock:
+            if attack_ms is None:
+                attack_ms = self.default_attack_ms
+            if release_ms is None:
+                release_ms = self.default_release_ms
 
-        voice = Voice(sample, velocity, attack_samples, release_samples)
+        attack_samples = int(self.sample_rate * (float(attack_ms) / 1000.0))
+        release_samples = int(self.sample_rate * (float(release_ms) / 1000.0))
+
+        voice = Voice(self, sample, note, velocity, attack_samples, release_samples)
 
         with self.lock:
             if len(self.voices) >= self.max_voices:
-                # On supprime la plus ancienne (ou la première) pour faire de la place
+                # On supprime la plus ancienne pour faire de la place
                 self.voices.pop(0)
             self.voices.append(voice)
 
@@ -259,8 +379,6 @@ class Sampler:
         out_buffer = np.zeros((frames, self.output_channels), dtype=np.float32)
 
         with self.lock:
-            # On fait une copie de la liste pour éviter les problèmes
-            # en cas de suppression de voix durant l'itération
             active_voices = list(self.voices)
 
         for voice in active_voices:
@@ -274,6 +392,76 @@ class Sampler:
         np.clip(out_buffer, -1.0, 1.0, out=out_buffer)
 
         outdata[:] = out_buffer
+
+    # -------------------------------------------------------------
+    # API POUR CONTRÔLE (Push / midi_cc_mode)
+    # -------------------------------------------------------------
+    def set_global_attack(self, ms: float):
+        """
+        Change l'attack globale (en ms). Affectera les prochaines notes jouées.
+        """
+        with self.lock:
+            self.default_attack_ms = max(0.0, float(ms))
+
+    def set_global_release(self, ms: float):
+        """
+        Change le release global (en ms). Affectera les prochaines notes jouées.
+        """
+        with self.lock:
+            self.default_release_ms = max(0.0, float(ms))
+
+    def set_global_volume(self, vol: float):
+        """
+        Change le volume global du sampler.
+        vol typiquement entre 0.0 et 1.0 (mais pas obligé).
+        """
+        with self.lock:
+            self.global_volume = max(0.0, float(vol))
+
+    def set_sample_volume(self, note: int, vol: float):
+        """
+        Change le volume d'un sample spécifique.
+        """
+        note = int(note)
+        with self.lock:
+            if note in self.samples:
+                self.sample_volumes[note] = max(0.0, float(vol))
+
+    def get_sample_volume(self, note: int) -> float:
+        """
+        Retourne le volume du sample (ou 1.0 si non défini).
+        """
+        note = int(note)
+        with self.lock:
+            return float(self.sample_volumes.get(note, 1.0))
+
+    def save_json_config(self, folder_path: str):
+        """
+        Sauvegarde volume.json dans folder_path avec :
+        - attack_ms / release_ms / volume globaux actuels
+        - volume par sample (pour tous les samples chargés)
+        """
+        config_path = os.path.join(folder_path, "volume.json")
+
+        with self.lock:
+            cfg = {
+                "global": {
+                    "attack_ms": float(self.default_attack_ms),
+                    "release_ms": float(self.default_release_ms),
+                    "volume": float(self.global_volume)
+                },
+                "samples": {
+                    str(note): {"volume": float(vol)}
+                    for note, vol in self.sample_volumes.items()
+                }
+            }
+
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            print(f"[SAMPLER] volume.json sauvegardé : {config_path}")
+        except Exception as e:
+            print(f"[SAMPLER] Erreur sauvegarde volume.json : {e}")
 
     # -------------------------------------------------------------
     # ARRÊT / CLEANUP
