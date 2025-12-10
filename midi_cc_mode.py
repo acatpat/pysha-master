@@ -319,8 +319,33 @@ class MIDICCMode(PyshaMode):
                 push2_python.constants.ENCODER_TRACK7_ENCODER,
                 push2_python.constants.ENCODER_TRACK8_ENCODER,
             ].index(encoder_name)
+
             if self.active_midi_control_ccs:
-                self.active_midi_control_ccs[encoder_num].update_value(increment)
-        except ValueError: 
-            pass  # Encoder not in list 
-        return True  # Always return True because encoder should not be used in any other mode if this is first active
+                control = self.active_midi_control_ccs[encoder_num]
+                if control is None:
+                    return True  # sécurité : aucun CC sur cet encodeur
+                control.update_value(increment)
+
+                # --- SAMPLER MODE: intercept CC → control sampler volume instead of sending MIDI ---
+                instrument = self.get_current_track_instrument_short_name_helper()
+                if instrument == "SAMPLER":
+                    cc_value = control.value  # 0–127
+
+                    try:
+                        # ex: "SMP36 VOL" → note = 36
+                        label = control.name
+                        note = int(label.replace("SMP", "").replace(" VOL", ""))
+                    except Exception:
+                        return True
+
+                    # Normalize 0–127 → 0.0–1.0
+                    volume = cc_value / 127.0
+                    self.app.sampler.set_sample_volume(note, volume)
+
+                    # STOP HERE : ne pas laisser midi_cc_mode envoyer du MIDI ensuite
+                    return True
+
+        except ValueError:
+            pass
+
+        return True

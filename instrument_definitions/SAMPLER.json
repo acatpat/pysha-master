@@ -4,5 +4,22 @@
     "illuminate_local_notes": false,
     "midi_channel": 5,
     "default_layout": "lrhythmic",
-    "n_banks": 1
+
+    "n_banks": 1,
+
+    "midi_cc": [
+        {
+            "section": "VOLUMES 36–43",
+            "controls": [
+                ["SMP36 VOL", 20],
+                ["SMP37 VOL", 21],
+                ["SMP38 VOL", 22],
+                ["SMP39 VOL", 23],
+                ["SMP40 VOL", 24],
+                ["SMP41 VOL", 25],
+                ["SMP42 VOL", 26],
+                ["SMP43 VOL", 27]
+            ]
+        }
+    ]
 }
