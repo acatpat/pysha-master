@@ -1,4 +1,3 @@
-import time
 import definitions
 import push2_python.constants
 from melodic_mode import MelodicMode
@@ -10,18 +9,29 @@ class Clip:
     STATE_RECORDING = 2
     STATE_QUEUED = 3
     STATE_QUEUED_RECORD = 4
-    STATE_WAIT_END_RECORD = 5
+    STATE_WAIT_END_RECORD = 5  # stop à la prochaine mesure pendant rec
 
     def __init__(self):
         self.state = Clip.STATE_EMPTY
-        self.data = []
-        self.length = 16
-        self.last_step_notes = []
+        self.data = []              # liste d'évènements: {note, velocity, start, end}
+        self.length = 0             # longueur du clip en "steps clip"
+        self.last_step_notes = []   # optionnel (non utilisé pour l'instant)
+
+        # Enregistrement
+        self.record_start_step = None  # step global au début REC
+
+        # Lecture
+        self.playhead_step = 0        # position courante dans le clip (0..length-1)
+        self.stop_after_end = False   # si True → s'arrête à la fin du clip
 
     def clear(self):
         self.data = []
         self.state = Clip.STATE_EMPTY
+        self.length = 0
         self.last_step_notes = []
+        self.record_start_step = None
+        self.playhead_step = 0
+        self.stop_after_end = False
 
 
 class ClipMatrix:
@@ -68,69 +78,33 @@ class SessionMode(MelodicMode):
         self.current_page = 0
         self.shift_is_held = False
 
-        # --- Nouveau : gestion du timing d'enregistrement ---
-        self._record_start_time = None    # temps réel du début de la mesure d'enregistrement
-        self._step_duration = None        # durée d'un step en secondes (calculé depuis tempo / steps_per_beat)
-        self._num_steps = None            # nombre total de steps dans la boucle (num_steps reçu de SequencerController)
+        # Compteur global de steps séquenceur (indépendant de current_step 0..31)
+        self.global_step = 0
 
     # ----------------------------------------------------------------------
-    #  ALL NOTES OFF pour une piste (colonne)
+    #  UTILITAIRE : ALL NOTES OFF POUR UNE PISTE (colonne)
     # ----------------------------------------------------------------------
     def _send_all_notes_off_for_track(self, track_col):
         """
-        Envoie note_off sur 0–127 pour l’instrument de la colonne (piste) donnée.
-        Appelé lors d’un STOP clip pour éviter les notes bloquées.
+        Envoie note_off 0–127 sur l’instrument de la colonne donnée.
+        Utilisé pour sécuriser l’arrêt des clips.
         """
         try:
-            tracks = getattr(self.app.track_selection_mode, "tracks_info", [])
-            if track_col >= len(tracks):
+            tsm = self.app.track_selection_mode
+            tracks = getattr(tsm, "tracks_info", [])
+            if track_col < 0 or track_col >= len(tracks):
                 return
 
             instr = tracks[track_col].get("instrument_short_name")
             if not instr:
                 return
 
-            for n in range(0, 128):
+            for n in range(128):
                 self.app.synths_midi.send_note_off(instr, n, velocity=0)
 
             print(f"[SESSION] ALL NOTES OFF sent for instrument '{instr}'")
         except Exception as e:
             print(f"[SESSION] ERROR ALL NOTES OFF: {e}")
-
-    # ----------------------------------------------------------------------
-    #  Calcul du step courant à partir du temps réel
-    # ----------------------------------------------------------------------
-    def _get_step_from_time(self):
-        """
-        Convertit le temps écoulé depuis _record_start_time en indice de step,
-        quantisé sur la grille du séquenceur (steps_per_beat / BPM),
-        et replié modulo _num_steps pour rester calé sur la boucle.
-        """
-        # Fallback : si pas d'info temps → on rebascule sur current_step du séquenceur
-        if self._record_start_time is None or not self._step_duration or self._step_duration <= 0:
-            try:
-                cs = getattr(self.app.sequencer_window, "current_step", 0)
-            except Exception:
-                cs = 0
-            if cs < 0:
-                cs = 0
-            return cs
-
-        elapsed = time.time() - self._record_start_time
-        if elapsed < 0:
-            elapsed = 0.0
-
-        raw_step = int(elapsed / self._step_duration)
-
-        if self._num_steps:
-            step = raw_step % self._num_steps
-        else:
-            step = raw_step
-
-        if step < 0:
-            step = 0
-
-        return step
 
     # -----------------------------------------------------------
     # ACTIVATION / DÉSACTIVATION
@@ -164,7 +138,7 @@ class SessionMode(MelodicMode):
                 clip = self.clips.get_clip(r, c)
 
                 if 0 <= c < len(tracks):
-                    track_color = tracks[c].get('color', definitions.GRAY_DARK)
+                    track_color = tracks[c].get("color", definitions.GRAY_DARK)
                 else:
                     track_color = definitions.GRAY_DARK
 
@@ -204,112 +178,130 @@ class SessionMode(MelodicMode):
     def on_sequencer_step(self, current_step, is_measure_start, num_steps):
         """
         Appelé à chaque step par SequencerController.
-        On utilise num_steps et les infos du séquenceur pour
-        garder l’enregistrement calé sur la boucle.
+        Ici on utilise un compteur global (self.global_step)
+        pour gérer des clips plus longs que la boucle du séquenceur (32 steps).
         """
+        # Avance du step global
+        self.global_step += 1
+
         app = self.app
         tsm = app.track_selection_mode
         tracks = getattr(tsm, "tracks_info", [])
 
-        # Mémoriser la longueur de boucle et la durée d'un step
-        self._num_steps = num_steps
-
-        try:
-            tempo = getattr(app.sequencer_window, "tempo_bpm", 120)
-            steps_per_beat = getattr(app.sequencer_window, "steps_per_beat", 4)
-            if tempo <= 0:
-                tempo = 120
-            if steps_per_beat <= 0:
-                steps_per_beat = 4
-            seconds_per_quarter = 60.0 / float(tempo)
-            self._step_duration = seconds_per_quarter / float(steps_per_beat)
-        except Exception:
-            # Fallback : 120 BPM, 4 steps/beat
-            self._step_duration = (60.0 / 120.0) / 4.0
-
+        # -----------------------------
+        # 1) DÉMARRER / ARRÊTER ENREGISTREMENT (quantisé à la mesure)
+        # -----------------------------
         changed_states = False
 
-        # --- START/STOP RECORD (à la mesure) ---
-        for r in range(8):
-            for c in range(8):
-                clip = self.clips.get_clip(r, c)
+        if is_measure_start:
+            for r in range(8):
+                for c in range(8):
+                    clip = self.clips.get_clip(r, c)
 
-                # Passage QUEUED_RECORD → RECORDING au début de mesure
-                if clip.state == Clip.STATE_QUEUED_RECORD and is_measure_start:
-                    clip.state = Clip.STATE_RECORDING
-                    clip.data = []
-                    clip.length = 0
+                    # Démarrage rec à la prochaine mesure
+                    if clip.state == Clip.STATE_QUEUED_RECORD:
+                        clip.state = Clip.STATE_RECORDING
+                        clip.data = []
+                        clip.length = 0
+                        clip.record_start_step = self.global_step
+                        clip.playhead_step = 0
+                        clip.stop_after_end = False
+                        print(f"[SESSION] START RECORDING ({r},{c}) at global_step={self.global_step}")
+                        changed_states = True
 
-                    # DÉBUT D'ENREGISTREMENT TEMPOREL :
-                    # on cale _record_start_time exactement sur le début de la mesure
-                    self._record_start_time = time.time()
-
-                    print(f"[SESSION] START RECORDING ({r},{c}) step={current_step}")
-                    changed_states = True
-
-                # Passage WAIT_END_RECORD → QUEUED (fin d'enregistrement) au début de mesure
-                if clip.state == Clip.STATE_WAIT_END_RECORD and is_measure_start:
-                    clip.state = Clip.STATE_QUEUED
-                    print(f"[SESSION] STOP RECORD ({r},{c}) step={current_step}")
-
-                    # couper toutes les notes de ce clip
-                    self._send_all_notes_off_for_track(c)
-
-                    # Plus de clip en RECORDING → on peut couper le timing global
-                    self._record_start_time = None
-
-                    changed_states = True
-
-        # Si un clip est encore en RECORDING, on garde _record_start_time
-        # (si plusieurs devaient exister, on se contente du premier)
-        if self.get_recording_clip() is None and self._record_start_time is not None:
-            self._record_start_time = None
+                    # Arrêt rec à la prochaine mesure
+                    if clip.state == Clip.STATE_WAIT_END_RECORD:
+                        if clip.record_start_step is not None:
+                            clip.length = max(
+                                clip.length,
+                                self.global_step - clip.record_start_step
+                            )
+                        clip.state = Clip.STATE_QUEUED
+                        clip.playhead_step = 0
+                        clip.stop_after_end = False
+                        print(f"[SESSION] STOP RECORD ({r},{c}) at global_step={self.global_step}, length={clip.length}")
+                        # Sécurité : couper les notes de cette piste
+                        self._send_all_notes_off_for_track(c)
+                        changed_states = True
 
         if changed_states:
             app.pads_need_update = True
 
-        # --- NOTE OFF playback ---
+        # -----------------------------
+        # 2) PLAYBACK : NOTE OFF / NOTE ON + gestion de la fin de clip
+        # -----------------------------
         for r in range(8):
             for c in range(8):
                 clip = self.clips.get_clip(r, c)
-                if clip.state == Clip.STATE_PLAYING:
-                    for ev in clip.data:
-                        if ev.get("end") == current_step:
-                            try:
-                                instr = tracks[c]['instrument_short_name']
-                                note = ev["note"]
-                                print(f"[SESSION-PLAY] NOTE_OFF {note}")
-                                app.synths_midi.send_note_off(instr, note)
-                            except Exception:
-                                pass
 
-        # --- QUEUED → PLAYING au début boucle ---
-        if current_step == 0:
+                if clip.state != Clip.STATE_PLAYING:
+                    continue
+
+                # Clip sans longueur → rien à faire
+                if clip.length <= 0:
+                    continue
+
+                step_in_clip = clip.playhead_step
+
+                # NOTE OFF au step courant
+                for ev in clip.data:
+                    if ev.get("end") == step_in_clip:
+                        try:
+                            if c < len(tracks):
+                                instr = tracks[c]["instrument_short_name"]
+                                note = ev["note"]
+                                print(f"[SESSION-PLAY] NOTE_OFF instr={instr} note={note} clip_step={step_in_clip}")
+                                app.synths_midi.send_note_off(instr, note)
+                        except Exception as e:
+                            print(f"[SESSION-PLAY] NOTE_OFF ERROR: {e}")
+
+                # NOTE ON au step courant
+                for ev in clip.data:
+                    if ev.get("start") == step_in_clip:
+                        try:
+                            if c < len(tracks):
+                                instr = tracks[c]["instrument_short_name"]
+                                note = ev["note"]
+                                vel = ev.get("velocity", 100)
+                                print(f"[SESSION-PLAY] NOTE_ON instr={instr} note={note} vel={vel} clip_step={step_in_clip}")
+                                app.synths_midi.send_note_on(instr, note, vel)
+                        except Exception as e:
+                            print(f"[SESSION-PLAY] NOTE_ON ERROR: {e}")
+
+                # Avance du playhead dans le clip
+                clip.playhead_step += 1
+
+                if clip.playhead_step >= clip.length:
+                    # Fin de clip atteinte
+                    if clip.stop_after_end:
+                        # STOP demandé → on arrête ici
+                        print(f"[SESSION] Clip end reached → STOP ({r},{c})")
+                        # Sécurité : all notes off
+                        self._send_all_notes_off_for_track(c)
+                        clip.state = Clip.STATE_EMPTY
+                        clip.playhead_step = 0
+                        clip.stop_after_end = False
+                        app.pads_need_update = True
+                    else:
+                        # Loop par défaut
+                        clip.playhead_step = 0
+
+        # -----------------------------
+        # 3) QUEUED → PLAYING AU DÉBUT DE MESURE
+        # -----------------------------
+        if is_measure_start:
             changed = False
             for r in range(8):
                 for c in range(8):
                     clip = self.clips.get_clip(r, c)
-                    if clip.state == Clip.STATE_QUEUED:
+                    if clip.state == Clip.STATE_QUEUED and clip.length > 0:
                         clip.state = Clip.STATE_PLAYING
+                        clip.playhead_step = 0
+                        clip.stop_after_end = False
+                        print(f"[SESSION] Clip ({r},{c}) → PLAYING at measure start (global_step={self.global_step})")
                         changed = True
             if changed:
                 app.pads_need_update = True
-
-        # --- NOTE ON playback ---
-        for r in range(8):
-            for c in range(8):
-                clip = self.clips.get_clip(r, c)
-                if clip.state == Clip.STATE_PLAYING:
-                    for ev in clip.data:
-                        if ev.get("start") == current_step:
-                            try:
-                                instr = tracks[c]['instrument_short_name']
-                                note = ev["note"]
-                                vel = ev.get("velocity", 100)
-                                print(f"[SESSION-PLAY] NOTE_ON {note}")
-                                app.synths_midi.send_note_on(instr, note, vel)
-                            except Exception:
-                                pass
 
     # -----------------------------------------------------------
     # GESTION PADS
@@ -321,31 +313,36 @@ class SessionMode(MelodicMode):
         row, col = pad_ij
         clip = self.clips.get_clip(row, col)
 
-        # --- Clip existant : PLAY/STOP ---
-        if len(clip.data) > 0:
+        # --- Clip AVEC données : PLAY / STOP À LA FIN ---
+        if len(clip.data) > 0 and clip.length > 0:
             if clip.state == Clip.STATE_PLAYING:
-                clip.state = Clip.STATE_EMPTY
-                print(f"[SESSION] Pad ({row},{col}) → STOP")
-
-                # note off immédiat sur la piste
-                self._send_all_notes_off_for_track(col)
-
+                # Demande un STOP à la fin du clip
+                clip.stop_after_end = True
+                print(f"[SESSION] Pad ({row},{col}) → STOP AT END requested")
             else:
+                # (Re)lancer le clip, quantisé à la prochaine mesure
                 clip.state = Clip.STATE_QUEUED
+                clip.playhead_step = 0
+                clip.stop_after_end = False
+                print(f"[SESSION] Pad ({row},{col}) → QUEUED (play at next measure)")
+
             self.app.pads_need_update = True
             return True
 
-        # --- EMPTY → enregistrement à prochaine mesure ---
-        if clip.state == Clip.STATE_EMPTY:
+        # --- Clip vide : programmation enregistrement à prochaine mesure ---
+        if clip.state == Clip.STATE_EMPTY and len(clip.data) == 0:
             clip.state = Clip.STATE_QUEUED_RECORD
-            print(f"[SESSION] QUEUED_RECORD ({row},{col})")
+            clip.record_start_step = None
+            clip.playhead_step = 0
+            clip.stop_after_end = False
+            print(f"[SESSION] Pad ({row},{col}) → QUEUED_RECORD (rec at next measure)")
             self.app.pads_need_update = True
             return True
 
-        # --- RECORDING → stop à prochaine mesure ---
+        # --- Pendant RECORDING : demander arrêt à prochaine mesure ---
         if clip.state == Clip.STATE_RECORDING:
             clip.state = Clip.STATE_WAIT_END_RECORD
-            print(f"[SESSION] WAIT_END_RECORD ({row},{col})")
+            print(f"[SESSION] Pad ({row},{col}) → WAIT_END_RECORD (stop rec at next measure)")
             self.app.pads_need_update = True
             return True
 
@@ -357,16 +354,16 @@ class SessionMode(MelodicMode):
     def get_recording_clip(self):
         for r in range(8):
             for c in range(8):
-                if self.clips.get_clip(r, c).state == Clip.STATE_RECORDING:
-                    return self.clips.get_clip(r, c)
+                clip = self.clips.get_clip(r, c)
+                if clip.state == Clip.STATE_RECORDING:
+                    return clip
         return None
 
     def on_midi_in(self, msg, source=None):
         """
-        Enregistre les notes :
-        - position de step calculée à partir du temps réel,
-          calé sur la mesure d'entrée (QUEUED_RECORD → RECORDING sur is_measure_start)
-        - les steps restent alignés sur la grille du séquenceur (steps_per_beat, tempo, num_steps)
+        Enregistrement des notes en steps RELATIFS au début du clip :
+        - start = global_step - record_start_step
+        - end   = idem
         """
         clip = self.get_recording_clip()
         if clip is None:
@@ -375,35 +372,42 @@ class SessionMode(MelodicMode):
         if msg.type not in ("note_on", "note_off"):
             return False
 
-        # Step courant basé sur le temps (et donc sur la mesure où l'enregistrement a démarré)
-        step = self._get_step_from_time()
+        # Step du sequencer en valeur globale
+        current_global = self.global_step
+        if clip.record_start_step is None:
+            # sécurité : si jamais pas initialisé (ne devrait pas arriver)
+            clip.record_start_step = current_global
 
-        # --- NOTE ON (vrai ON : velocity > 0) ---
+        clip_step = current_global - clip.record_start_step
+        if clip_step < 0:
+            clip_step = 0
+
+        # NOTE ON (velocity > 0)
         if msg.type == "note_on" and msg.velocity > 0:
             ev = {
                 "note": msg.note,
                 "velocity": msg.velocity,
-                "start": step,
-                "end": None
+                "start": clip_step,
+                "end": None,
             }
             clip.data.append(ev)
-            print(f"[SESSION-REC] NOTE_ON {msg.note} step={step}")
+            print(f"[SESSION-REC] NOTE_ON note={msg.note} vel={msg.velocity} clip_step={clip_step}")
             return True
 
-        # --- NOTE OFF (note_off, ou note_on vel=0) ---
+        # NOTE OFF (note_off ou note_on vel=0)
         if msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
             for ev in reversed(clip.data):
                 if ev.get("note") == msg.note and ev.get("end") is None:
-                    clip.length = max(clip.length, step + 1)
-                    ev["end"] = step
-                    print(f"[SESSION-REC] NOTE_OFF {msg.note} step={step}")
+                    ev["end"] = clip_step
+                    clip.length = max(clip.length, clip_step + 1)
+                    print(f"[SESSION-REC] NOTE_OFF note={msg.note} clip_step={clip_step}")
                     break
             return True
 
         return False
 
     # -----------------------------------------------------------
-    # BOUTONS
+    # BOUTONS (inchangé, juste Shift)
     # -----------------------------------------------------------
     def on_button_pressed(self, button_name):
         if button_name == "Shift":
