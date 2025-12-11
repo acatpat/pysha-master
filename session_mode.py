@@ -81,6 +81,12 @@ class SessionMode(MelodicMode):
         # Compteur global de steps séquenceur (indépendant de current_step 0..31)
         self.global_step = 0
 
+        # --- Nouveaux états pour Duplicate / Delete / Quantize ---
+        self.duplicate_is_held = False
+        self.delete_is_held = False
+        self.quantize_is_held = False
+        self.duplicate_source = None  # (row, col) du clip source à dupliquer
+
     # ----------------------------------------------------------------------
     #  UTILITAIRE : ALL NOTES OFF POUR UNE PISTE (colonne)
     # ----------------------------------------------------------------------
@@ -304,6 +310,45 @@ class SessionMode(MelodicMode):
                 app.pads_need_update = True
 
     # -----------------------------------------------------------
+    # QUANTISATION
+    # -----------------------------------------------------------
+    def _quantize_clip_to_sixteenth(self, clip):
+        """
+        Quantise les événements du clip sur une grille de 1/16.
+        Ici on suppose qu'1 step de clip = 1/16.
+        """
+        if clip is None:
+            return
+        if clip.length <= 0 or not clip.data:
+            return
+
+        grid = 1  # 1 step = 1/16
+
+        def q(v):
+            return int(round(v / grid)) * grid
+
+        max_end = 0
+        for ev in clip.data:
+            start = ev.get("start")
+            end = ev.get("end")
+
+            if start is not None:
+                ev["start"] = q(start)
+
+            if end is not None:
+                ev["end"] = q(end)
+                # Sécurité : éviter end < start
+                if ev["end"] < ev["start"]:
+                    ev["end"] = ev["start"] + 1
+                if ev["end"] > max_end:
+                    max_end = ev["end"]
+
+        if max_end > 0:
+            # On s'assure que la longueur est au moins jusqu'à la dernière note
+            clip.length = max(clip.length, max_end)
+
+
+    # -----------------------------------------------------------
     # GESTION PADS
     # -----------------------------------------------------------
     def on_pad_pressed(self, pad_n, pad_ij, velocity):
@@ -312,6 +357,78 @@ class SessionMode(MelodicMode):
 
         row, col = pad_ij
         clip = self.clips.get_clip(row, col)
+
+        # ---------------------------------------------------
+        # 1) DELETE + pad → efface le clip
+        # ---------------------------------------------------
+        if self.delete_is_held:
+            if len(clip.data) > 0 or clip.length > 0 or clip.state != Clip.STATE_EMPTY:
+                clip.clear()
+                print(f"[SESSION] Clip ({row},{col}) deleted via Delete+Pad")
+                self.app.pads_need_update = True
+                return True
+            else:
+                # Rien à supprimer
+                print(f"[SESSION] Delete+Pad ({row},{col}) → clip already empty")
+                return True
+
+        # ---------------------------------------------------
+        # 2) DUPLICATE maintenu :
+        #    - premier pad = source
+        #    - deuxième pad (vide) = destination
+        # ---------------------------------------------------
+        if self.duplicate_is_held:
+            # Sélection de la source
+            if self.duplicate_source is None:
+                if len(clip.data) > 0 and clip.length > 0:
+                    self.duplicate_source = (row, col)
+                    print(f"[SESSION] Duplicate source selected at ({row},{col})")
+                else:
+                    print(f"[SESSION] Duplicate source at ({row},{col}) ignored (empty clip)")
+                return True
+            else:
+                # On a déjà une source : ce pad devient la destination
+                src_r, src_c = self.duplicate_source
+                src_clip = self.clips.get_clip(src_r, src_c)
+
+                # Empêcher la duplication vers un clip non vide
+                if len(src_clip.data) == 0 or src_clip.length <= 0:
+                    print("[SESSION] Duplicate: source has no data, abort")
+                    return True
+
+                if len(clip.data) > 0 or clip.length > 0 or clip.state != Clip.STATE_EMPTY:
+                    print(f"[SESSION] Duplicate: destination ({row},{col}) is not empty, abort")
+                    return True
+
+                # Copie des données
+                clip.clear()
+                clip.data = [dict(ev) for ev in src_clip.data]
+                clip.length = src_clip.length
+                clip.state = Clip.STATE_EMPTY
+                clip.playhead_step = 0
+                clip.stop_after_end = False
+                clip.record_start_step = None
+
+                print(f"[SESSION] Clip ({src_r},{src_c}) duplicated to ({row},{col})")
+                self.app.pads_need_update = True
+                return True
+
+        # ---------------------------------------------------
+        # 3) QUANTIZE maintenu : quantisation du clip à 1/16
+        # ---------------------------------------------------
+        if self.quantize_is_held:
+            if len(clip.data) > 0 and clip.length > 0:
+                self._quantize_clip_to_sixteenth(clip)
+                print(f"[SESSION] Quantize 1/16 applied to clip ({row},{col})")
+                # Pas de changement d'état de lecture, seulement les données
+                return True
+            else:
+                print(f"[SESSION] Quantize ignored on empty clip ({row},{col})")
+                return True
+
+        # ---------------------------------------------------
+        # 4) COMPORTEMENT EXISTANT (PLAY / REC) inchangé
+        # ---------------------------------------------------
 
         # --- Clip AVEC données : PLAY / STOP À LA FIN ---
         if len(clip.data) > 0 and clip.length > 0:
@@ -348,16 +465,6 @@ class SessionMode(MelodicMode):
 
         return False
 
-    # -----------------------------------------------------------
-    # MIDI ENREGISTREMENT
-    # -----------------------------------------------------------
-    def get_recording_clip(self):
-        for r in range(8):
-            for c in range(8):
-                clip = self.clips.get_clip(r, c)
-                if clip.state == Clip.STATE_RECORDING:
-                    return clip
-        return None
 
     def on_midi_in(self, msg, source=None):
         """
@@ -406,17 +513,52 @@ class SessionMode(MelodicMode):
 
         return False
 
+
     # -----------------------------------------------------------
-    # BOUTONS (inchangé, juste Shift)
+    # BOUTONS (Shift, Duplicate, Delete, Quantize)
     # -----------------------------------------------------------
     def on_button_pressed(self, button_name):
         if button_name == "Shift":
             self.shift_is_held = True
             return True
+
+        if button_name == "Duplicate":
+            self.duplicate_is_held = True
+            self.duplicate_source = None
+            print("[SESSION] Duplicate button held")
+            return True
+
+        if button_name == "Delete":
+            self.delete_is_held = True
+            print("[SESSION] Delete button held")
+            return True
+
+        if button_name == "Quantize":
+            self.quantize_is_held = True
+            print("[SESSION] Quantize button held")
+            return True
+
         return False
 
     def on_button_released(self, button_name):
         if button_name == "Shift":
             self.shift_is_held = False
             return True
+
+        if button_name == "Duplicate":
+            self.duplicate_is_held = False
+            self.duplicate_source = None
+            print("[SESSION] Duplicate button released")
+            return True
+
+        if button_name == "Delete":
+            self.delete_is_held = False
+            print("[SESSION] Delete button released")
+            return True
+
+        if button_name == "Quantize":
+            self.quantize_is_held = False
+            print("[SESSION] Quantize button released")
+            return True
+
         return False
