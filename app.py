@@ -555,14 +555,21 @@ class PyshaApp(object):
             if self.midi_in_channel != -1 and msg.channel != self.midi_in_channel:
                 skip_message = True
 
+        # --- AJOUT DEMANDÉ : renvoi direct vers OUT ---
         if not skip_message:
-            # Pas d'envoi OUT automatique pour les ports instrument IN
-            # Juste forwarding aux modes
+            try:
+                self.synths_midi.send(msg, instrument_name)
+            except Exception:
+                pass
+
+        if not skip_message:
+            # Forward aux modes comme avant
             for mode in self.active_modes:
                 try:
                     mode.on_midi_in(msg, source=instrument_name)
                 except Exception:
                     pass
+
 
     def midi_in_handler_global(self, msg):
         # CE CODE EST DÉJÀ FAIT DANS PHASE ROUTING

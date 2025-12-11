@@ -393,6 +393,18 @@ class SequencerController:
         if current_step in self.step_to_push2:
             row, col = self.step_to_push2[current_step]
             pad_matrix[row][col] = definitions.WHITE
+        
+        # --- Highlight du PAD qui joue au step courant (BLANC) ---
+        try:
+            for pad_index, pad_steps in enumerate(self.model):
+                if 0 <= current_step < len(pad_steps) and pad_steps[current_step]:
+                    # Pad ayant un step actif au step courant → BLANC
+                    pitch = list(self.pad_map.keys())[pad_index]
+                    prow, pcol = self.pad_to_push2[pitch]
+                    pad_matrix[prow][pcol] = definitions.WHITE
+        except Exception:
+            pass
+
 
         # --- ENVOI DES COULEURS ---
         try:

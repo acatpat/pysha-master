@@ -482,3 +482,29 @@ class Synths_Midi:
             self._send_clock_message_to_outputs(stop_msg)
         except:
             pass
+
+    # -----------------------------------------------------------
+    # ### DIRECT FORWARDING (OPTIONNEL) ###
+    # -----------------------------------------------------------
+    def forward_input_to_output(self, incoming_port_name, msg):
+        """
+        Relais direct IN → OUT pour un instrument dont le port IN correspond
+        à incoming_port_name.
+
+        NE S'ACTIVE QUE SI L'APP L'APPELLE.
+        Aucun changement structurel.
+        """
+        # Trouver l'instrument qui utilise ce port IN
+        for instr, ports in self.instrument_midi_ports.items():
+            inp = ports.get("in")
+            outp = ports.get("out")
+
+            if inp is None or outp is None:
+                continue
+
+            # Vérifier la correspondance exacte du nom du port
+            try:
+                if getattr(inp, "name", None) == incoming_port_name:
+                    outp.send(msg)
+            except Exception as e:
+                print(f"[MIDI FORWARD ERROR] {instr} : {e}")
