@@ -250,6 +250,180 @@ class MIDICCMode(PyshaMode):
         else:
             self.push.buttons.set_button_color(push2_python.constants.BUTTON_PAGE_RIGHT, definitions.BLACK)
 
+    def _draw_sampler_waveform(self, ctx, note):
+        """
+        Dessine l'onde du sample 'note' sur les 4 premiers x_part (0–3),
+        en jaune sur fond noir, avec :
+          - trim_start / trim_end sous forme de barres verticales
+          - ce qui est avant START et après END aplati (ligne au centre)
+          - attack / release qui déforment le dessin à partir de START/END
+        """
+        sampler = getattr(self.app, "sampler", None)
+        if sampler is None:
+            return
+
+        # Récupérer le Sample correspondant à la note
+        sample = sampler.samples.get(note)
+        if sample is None:
+            return
+
+        data = sample.data
+        if data is None or data.shape[0] < 2:
+            return
+
+        # Mono : on prend le premier canal
+        mono = data[:, 0]
+        n_frames = mono.shape[0]
+        if n_frames < 2:
+            return
+
+        # Dimensions de l'écran Push 2
+        display_w = push2_python.constants.DISPLAY_LINE_PIXELS
+        display_h = push2_python.constants.DISPLAY_N_LINES
+
+        # Zone d'affichage : x_part 0–3 => moitié gauche de l'écran
+        x0 = 0
+        x1 = display_w // 2
+        region_width = max(2, x1 - x0)
+
+        # Zone verticale (sous les titres, au-dessus du bas)
+        top = 30
+        bottom = display_h - 40
+        height = bottom - top
+        if height <= 0:
+            return
+
+        center_y = top + height / 2.0
+        half_h = height / 2.0
+
+        # Nettoyer la zone : fond noir
+        ctx.save()
+        ctx.set_source_rgb(0.0, 0.0, 0.0)
+        ctx.rectangle(x0, top, region_width, height)
+        ctx.fill()
+
+        # Paramètres de trim et d'enveloppe
+        trim_start = max(0.0, min(1.0, float(sample.trim_start)))
+        trim_end = max(0.0, min(1.0, float(sample.trim_end)))
+        if trim_end <= trim_start:
+            # Trim incohérent => ligne plate
+            ctx.set_source_rgb(*definitions.get_color_rgb_float(definitions.YELLOW))
+            ctx.set_line_width(1.0)
+            ctx.move_to(x0 + 0.5, center_y)
+            ctx.line_to(x0 + region_width - 0.5, center_y)
+            ctx.stroke()
+            ctx.restore()
+            return
+
+        start_idx = int(trim_start * (n_frames - 1))
+        end_idx = int(trim_end * (n_frames - 1))
+        end_idx = max(end_idx, start_idx + 1)
+
+        attack_samples = max(1, int(sample.attack_seconds * sampler.sample_rate))
+        release_samples = max(1, int(sample.release_seconds * sampler.sample_rate))
+
+        # 1er passage : calcul des amplitudes + max pour normalisation
+        amplitudes = [0.0] * region_width
+        max_amp = 0.0
+
+        for x in range(region_width):
+            # t = position horizontale 0..1
+            if region_width > 1:
+                t = x / float(region_width - 1)
+            else:
+                t = 0.0
+
+            idx = int(t * (n_frames - 1))
+            idx = max(0, min(n_frames - 1, idx))
+
+            s = float(mono[idx])
+
+            # Envelope basée sur trim + attack + release
+            if idx < start_idx or idx > end_idx:
+                env = 0.0
+            else:
+                rel_from_start = idx - start_idx
+                rel_to_end = end_idx - idx
+
+                if attack_samples <= 1:
+                    attack_env = 1.0
+                else:
+                    attack_env = max(0.0, min(1.0, rel_from_start / float(attack_samples)))
+
+                if release_samples <= 1:
+                    release_env = 1.0
+                else:
+                    release_env = max(0.0, min(1.0, rel_to_end / float(release_samples)))
+
+                env = min(attack_env, release_env)
+
+            amp = abs(s * env)
+            amplitudes[x] = amp
+            if amp > max_amp:
+                max_amp = amp
+
+        # Si rien à afficher => simple ligne
+        ctx.set_source_rgb(*definitions.get_color_rgb_float(definitions.YELLOW))
+        ctx.set_line_width(1.0)
+
+        if max_amp <= 1e-6:
+            ctx.move_to(x0 + 0.5, center_y)
+            ctx.line_to(x0 + region_width - 0.5, center_y)
+            ctx.stroke()
+
+            # Barres START / END (pour que ce soit cohérent visuellement même si plat)
+            x_start = int((start_idx / float(n_frames - 1)) * (region_width - 1))
+            x_end = int((end_idx / float(n_frames - 1)) * (region_width - 1))
+
+            ctx.set_line_width(1.5)
+            # START
+            ctx.move_to(x0 + x_start + 0.5, top)
+            ctx.line_to(x0 + x_start + 0.5, bottom)
+            # END
+            ctx.move_to(x0 + x_end + 0.5, top)
+            ctx.line_to(x0 + x_end + 0.5, bottom)
+            ctx.stroke()
+
+            ctx.restore()
+            return
+
+        # 2e passage : tracé des deux courbes (haut et bas) → onde symétrique
+        # Haut
+        first_amp_norm = amplitudes[0] / max_amp
+        y_top0 = center_y - first_amp_norm * half_h
+        ctx.move_to(x0 + 0.5, y_top0)
+        for x in range(1, region_width):
+            amp_norm = amplitudes[x] / max_amp
+            y_top = center_y - amp_norm * half_h
+            ctx.line_to(x0 + x + 0.5, y_top)
+        ctx.stroke()
+
+        # Bas
+        first_amp_norm = amplitudes[0] / max_amp
+        y_bot0 = center_y + first_amp_norm * half_h
+        ctx.move_to(x0 + 0.5, y_bot0)
+        for x in range(1, region_width):
+            amp_norm = amplitudes[x] / max_amp
+            y_bot = center_y + amp_norm * half_h
+            ctx.line_to(x0 + x + 0.5, y_bot)
+        ctx.stroke()
+
+        # Barres START / END
+        x_start = int((start_idx / float(n_frames - 1)) * (region_width - 1))
+        x_end = int((end_idx / float(n_frames - 1)) * (region_width - 1))
+
+        ctx.set_line_width(1.5)
+        # START
+        ctx.move_to(x0 + x_start + 0.5, top)
+        ctx.line_to(x0 + x_start + 0.5, bottom)
+        # END
+        ctx.move_to(x0 + x_end + 0.5, top)
+        ctx.line_to(x0 + x_end + 0.5, bottom)
+        ctx.stroke()
+
+        ctx.restore()
+
+
     def update_display(self, ctx, w, h):
 
         if not self.app.is_mode_active(self.app.settings_mode):
@@ -276,16 +450,47 @@ class MIDICCMode(PyshaMode):
                         background_color = definitions.BLACK
                         font_color = current_track_color
                     show_text(ctx, i, 0, section_name, height=height,
-                            font_color=font_color, background_color=background_color)
+                              font_color=font_color, background_color=background_color)
 
             # Draw MIDI CC controls
             if self.active_midi_control_ccs:
+                instrument = self.get_current_track_instrument_short_name_helper()
+                selected_section, _ = self.get_currently_selected_midi_cc_section_and_page()
+
+                sampler_wave_drawn = False
+
+                # --- CAS SPECIAL : SAMPLER + section "Param" ---
+                if instrument == "SAMPLER" and selected_section == "Param":
+                    try:
+                        # On détermine la note à partir du premier contrôle de la page
+                        first_control = self.active_midi_control_ccs[0]
+                        label = first_control.name  # ex: "SMP36 ATTACK"
+                        parts = label.split(" ")
+                        note = None
+                        if parts and parts[0].startswith("SMP"):
+                            try:
+                                note = int(parts[0].replace("SMP", ""))
+                            except ValueError:
+                                note = None
+
+                        if note is not None:
+                            self._draw_sampler_waveform(ctx, note)
+                            sampler_wave_drawn = True
+
+                    except Exception:
+                        # En cas d'erreur, on ignore silencieusement et on garde le drawing normal
+                        sampler_wave_drawn = False
+
+                # Ensuite : dessiner les contrôles (sauf les 4 premiers si waveform sampler affichée)
                 for i in range(0, min(len(self.active_midi_control_ccs), 8)):
+                    # Si on a dessiné l'onde pour le sampler, on supprime les 4 premiers knobs visuels
+                    if sampler_wave_drawn and i < 4:
+                        continue
                     try:
                         self.active_midi_control_ccs[i].draw(ctx, i)
                     except IndexError:
                         continue
- 
+
     
     def on_button_pressed(self, button_name):
         if  button_name in self.midi_cc_button_names:
@@ -394,3 +599,54 @@ class MIDICCMode(PyshaMode):
 
         # On renvoie toujours True : ce mode consomme l’encodeur quand il est actif
         return True
+
+
+    # -------------------------------------------------------------
+    # SAMPLER : sélection automatique SMPxx → affiche page Param
+    # -------------------------------------------------------------
+    def select_sample(self, note):
+        """
+        Force l'affichage de la page Param correspondant à SMPxx.
+        Ex : note 36 → SMP36 START/ATTACK/RELEASE/END
+        """
+
+        instrument = self.get_current_track_instrument_short_name_helper()
+        if instrument != "SAMPLER":
+            return
+
+        section = "Param"
+        controls = self.instrument_midi_control_ccs.get("SAMPLER", [])
+        if not controls:
+            return
+
+        # ---- 1) Tous les contrôles de la section Param (ordre local) ----
+        section_controls = [c for c in controls if c.section == section]
+        if not section_controls:
+            return
+
+        # ---- 2) Contrôles pour ce sample SMPxx dans cette section ----
+        prefix = f"SMP{note} "
+        sample_controls = [c for c in section_controls
+                           if c.name.startswith(prefix)]
+
+        if not sample_controls:
+            print("[SAMPLER] select_sample: aucun contrôle Param trouvé pour", note)
+            return
+
+        # ---- 3) Index local dans la section Param ----
+        first_control = sample_controls[0]
+        try:
+            local_index = section_controls.index(first_control)
+        except ValueError:
+            return
+
+        # ---- 4) Page = index local // 8 (8 contrôles par page) ----
+        page = local_index // 8
+
+        # ---- 5) Mise à jour interne ----
+        self.current_selected_section_and_page["SAMPLER"] = [section, page]
+        self.active_midi_control_ccs = self.get_midi_cc_controls_for_current_track_section_and_page()
+
+        # ---- 6) Rafraîchissement Push ----
+        self.app.buttons_need_update = True
+        self.app.display_render_needed = True

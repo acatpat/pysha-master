@@ -83,21 +83,23 @@ class RhythmicMode(MelodicMode):
             self.app.synths_midi.send_pitchbend(instr, value)
 
 
-    def on_button_pressed(self, button_name):
-        # Ignorer octave up/down
-        if button_name in (push2_python.constants.BUTTON_OCTAVE_UP, push2_python.constants.BUTTON_OCTAVE_DOWN):
-            return
-
-        # Boutons Play / Résolution gérés ici
-        elif button_name in ("1/4", "1/8", "1/16", "1/32"):
-            self.app.sequencer_controller.handle_push2_button(button_name)
-        else:
-            # Les autres boutons sont traités par la classe parente
-            super().on_button_pressed(button_name)
-
     def on_pad_pressed(self, pad_n, pad_ij, velocity):
         midi_note = self.pad_ij_to_midi_note(pad_ij)
 
+        # ============================================================
+        #  SAMPLER : sélection automatique du sample SMPxx
+        #  (en plus du sequencer, pas à la place !)
+        # ============================================================
+        if getattr(self.app, "current_instrument_definition", None) == "SAMPLER":
+            if 36 <= midi_note <= 51:
+                try:
+                    self.app.midi_cc_mode.select_sample(midi_note)
+                except Exception as e:
+                    print("[SAMPLER] select_sample error:", e)
+            # NE PAS retourner ici → laisser passer au sequencer
+        # ============================================================
+
+        # Séquencer normal (fonctionne même en SAMPLER)
         if hasattr(self.app, "sequencer_controller"):
             self.app.sequencer_controller.handle_rhythmic_input(midi_note)
             return True
