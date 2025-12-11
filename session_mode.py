@@ -466,7 +466,20 @@ class SessionMode(MelodicMode):
         return False
 
 
+    # -----------------------------------------------------------
+    # MIDI ENREGISTREMENT
+    # -----------------------------------------------------------
+    def get_recording_clip(self):
+        for r in range(8):
+            for c in range(8):
+                clip = self.clips.get_clip(r, c)
+                if clip.state == Clip.STATE_RECORDING:
+                    return clip
+        return None
+
+
     def on_midi_in(self, msg, source=None):
+
         """
         Enregistrement des notes en steps RELATIFS au début du clip :
         - start = global_step - record_start_step

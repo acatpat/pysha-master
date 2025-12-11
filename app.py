@@ -51,6 +51,7 @@ app = None
 
 class PyshaApp(object):
 
+
     # midi
     midi_out = None
     available_midi_out_device_names = []
@@ -126,6 +127,10 @@ class PyshaApp(object):
         self.synths_midi = Synths_Midi()
 
         self.synths_midi.app = self
+
+        # Restaurer les ports MIDI IN/OUT des instruments depuis settings.json
+        self.restore_instrument_ports_from_settings(settings)
+
 
         # --- Sampler audio chromatique ---
         self.sampler = Sampler()
@@ -290,7 +295,7 @@ class PyshaApp(object):
             'created_at': datetime.utcnow().isoformat() + 'Z',
             'app_version': getattr(definitions, 'VERSION', 'unknown')
         }
-
+        """"
         # Instruments + midi ports (store names)
         preset['tracks'] = []
         # Expect synth_window.instrument_midi_ports to be a dict keyed by instrument short name
@@ -318,7 +323,7 @@ class PyshaApp(object):
                 info["midi_in_port_name"] = self._port_to_name(port_info.get("in"))
                 info["midi_out_port_name"] = self._port_to_name(port_info.get("out"))
                 preset['tracks'].append(info)
-
+        """
         # Sequencer state
         seq_win = getattr(self, 'sequencer_window', None)
         if seq_win is not None:
@@ -344,6 +349,8 @@ class PyshaApp(object):
             self.add_display_notification('Error saving preset')
 
         return filename
+
+
 
     def list_presets(self):
         """Return sorted list of preset filenames (full path)."""
@@ -546,29 +553,28 @@ class PyshaApp(object):
         return self.midi_in_handler_global(msg)
 
     def midi_in_handler_instrument(self, msg, instrument_name):
+        print("[DEBUG] instr_in →", instrument_name, msg)
+
+
         """
         Appelé uniquement si l'entrée concerne un instrument.
+
+        ⚠ Ici on NE FILTRE PAS par midi_in_channel :
+        chaque instrument peut gérer son propre canal (via track_selection_mode, etc.).
         """
-        skip_message = False
+        # Renvoi direct vers OUT
+        try:
+            self.synths_midi.send(msg, instrument_name)
+        except Exception:
+            pass
 
-        if hasattr(msg, "channel"):
-            if self.midi_in_channel != -1 and msg.channel != self.midi_in_channel:
-                skip_message = True
-
-        # --- AJOUT DEMANDÉ : renvoi direct vers OUT ---
-        if not skip_message:
+        # Forward aux modes actifs (Melodic, Rhythmic, Session, etc.)
+        for mode in self.active_modes:
             try:
-                self.synths_midi.send(msg, instrument_name)
+                mode.on_midi_in(msg, source=instrument_name)
             except Exception:
                 pass
 
-        if not skip_message:
-            # Forward aux modes comme avant
-            for mode in self.active_modes:
-                try:
-                    mode.on_midi_in(msg, source=instrument_name)
-                except Exception:
-                    pass
 
 
     def midi_in_handler_global(self, msg):
@@ -723,9 +729,9 @@ class PyshaApp(object):
         settings = {
             'midi_in_default_channel': self.midi_in_channel,
             'midi_out_default_channel': self.midi_out_channel,
-            'default_midi_in_device_name': self.midi_in.name[:-4] if self.midi_in is not None else None,
-            'default_midi_out_device_name': self.midi_out.name[:-4] if self.midi_out is not None else None,
-            'default_notes_midi_in_device_name': self.notes_midi_in.name[:-4] if self.notes_midi_in is not None else None,
+            #'default_midi_in_device_name': self.midi_in.name[:-4] if self.midi_in is not None else None,
+            #'default_midi_out_device_name': self.midi_out.name[:-4] if self.midi_out is not None else None,
+            #'default_notes_midi_in_device_name': self.notes_midi_in.name[:-4] if self.notes_midi_in is not None else None,
             'use_push2_display': self.use_push2_display,
             'target_frame_rate': self.target_frame_rate,
         }
@@ -733,7 +739,63 @@ class PyshaApp(object):
             mode_settings = mode.get_settings_to_save()
             if mode_settings:
                 settings.update(mode_settings)
+
+        # AJOUT : sauvegarde des ports MIDI des instruments
+        settings["instrument_ports"] = self._collect_instrument_ports_for_settings()
+
         json.dump(settings, open('settings.json', 'w'))
+
+    def _collect_instrument_ports_for_settings(self):
+        """
+        Retourne une liste JSON-sérialisable des ports MIDI IN/OUT
+        de chaque instrument.
+        """
+        ports = getattr(self.synths_midi, "instrument_port_names", {})
+        result = []
+
+        for instr, port_info in ports.items():
+            result.append({
+                "instrument": instr,
+                "midi_in_port_name": self._port_to_name(port_info.get("in")),
+                "midi_out_port_name": self._port_to_name(port_info.get("out")),
+            })
+
+        return result
+
+
+    def restore_instrument_ports_from_settings(self, settings):
+        """
+        Recharge les ports MIDI IN/OUT depuis settings.json
+        et configure Synths_Midi en conséquence.
+        """
+        saved_list = settings.get("instrument_ports", [])
+        if not saved_list:
+            print("[SETTINGS] No instrument ports found in settings.json")
+            return
+
+        for entry in saved_list:
+            instr = entry.get("instrument")
+            in_name = entry.get("midi_in_port_name")
+            out_name = entry.get("midi_out_port_name")
+
+            if not instr:
+                continue
+
+            # Met à jour le miroir interne
+            self.synths_midi.set_instrument_in_port(instr, in_name)
+            self.synths_midi.set_instrument_out_port(instr, out_name)
+
+            # Ouvrir les ports MIDO correspondants
+            try:
+                self.synths_midi.assign_instrument_ports(
+                    instrument_name=instr,
+                    in_name=in_name,
+                    out_name=out_name
+                )
+                print(f"[SETTINGS] Restored {instr}: IN={in_name}, OUT={out_name}")
+            except Exception as e:
+                print(f"[SETTINGS] Failed restoring ports for {instr}: {e}")
+
 
     def set_midi_in_channel(self, channel, wrap=False):
         self.midi_in_channel = channel
