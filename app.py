@@ -39,7 +39,6 @@ from midi_manager import Synths_Midi
 
 
 
-
 from controller.sequencer_controller import SequencerController
 from ui.sequencer_window import SequencerWindow
 from ui.synth_window import SynthWindow
@@ -124,6 +123,8 @@ class PyshaApp(object):
         self.sequencer_window.app = self
         self.sequencer_window.sequencer_target = self.sequencer_target
 
+
+
         self.synths_midi = Synths_Midi()
 
         self.synths_midi.app = self
@@ -179,6 +180,8 @@ class PyshaApp(object):
         # Lier Synths_Midi à l’App
         self.synths_midi.incoming_midi_callback = self.midi_in_handler
 
+        from session_mode_v2 import SessionModeV2
+        self.session_mode_v2 = SessionModeV2(self.sequencer_controller)
 
 
 
@@ -847,6 +850,10 @@ class PyshaApp(object):
                 if not skip_message:
                     # Forward message to main MIDI out (identical intention)
                     self.synths_midi.send(msg)
+
+                    # --- SessionModeV2 : capture RAW ---
+                    if hasattr(self, "session_mode_v2"):
+                        self.session_mode_v2.handle_midi_event(msg)
 
                     # Forward the midi message to the active modes
                     for mode in self.active_modes:

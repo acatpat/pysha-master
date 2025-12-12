@@ -50,6 +50,21 @@ class SequencerController:
         # Initialisation pads/steps
         self._init_default_mapping()
 
+        # -----------------------------------------------------------------
+        # TEMPS MAÎTRE — SessionModeV2 (lecture seule)
+        # -----------------------------------------------------------------
+        self.global_tick = 0
+
+        # Constantes temporelles figées
+        self.ppqn = 24
+        self.beats_per_bar = 4
+        self.steps_per_beat = 4        # 1/16
+        self.steps_per_bar = 16
+
+        self.ticks_per_step = 6        # 24 / 4
+        self.ticks_per_bar = 96        # 24 * 4
+
+
     def on_first_clock_tick(self):
         """
         Appelé uniquement au tout premier tick clock après START.
@@ -508,6 +523,39 @@ class SequencerController:
 
 
     def tick_from_clock_thread(self, event=None):
+
+        # -------------------------------------------------------------
+        # TEMPS MAÎTRE — incrément clock globale (SessionModeV2)
+        # -------------------------------------------------------------
+        self.global_tick += 1
+
+        global_tick = self.global_tick
+        global_step = global_tick // self.ticks_per_step
+        global_bar = global_tick // self.ticks_per_bar
+        step_in_bar = global_step % self.steps_per_bar
+
+        self.global_step = global_step
+        self.global_bar = global_bar
+        self.step_in_bar = step_in_bar
+
+
+        # -------------------------------------------------------------
+        # CALLBACKS TEMPS → SessionModeV2 (lecture seule)
+        # -------------------------------------------------------------
+        session_v2 = getattr(self.app, "session_mode_v2", None)
+        if session_v2:
+            # Tick temps réel
+            session_v2.on_tick(global_tick)
+
+            # Début de mesure
+            if global_tick % self.ticks_per_bar == 0:
+                session_v2.on_bar_start(global_bar)
+
+            # Début de step (1/16)
+            if global_tick % self.ticks_per_step == 0:
+                session_v2.on_step(global_step, step_in_bar)
+
+
         if event == "stop":
             self._tick_count = 0
             self.current_step = 0
