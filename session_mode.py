@@ -118,8 +118,19 @@ class SessionMode(MelodicMode):
     def activate(self):
         super().activate()
         self.update_pads()
+        self.update_buttons()
 
     def deactivate(self):
+
+        # Éteindre les boutons en quittant le mode
+        push = self.push
+        push.buttons.set_button_color("Delete", definitions.BLACK)
+        push.buttons.set_button_color("Duplicate", definitions.BLACK)
+        push.buttons.set_button_color("Quantize", definitions.BLACK)
+        push.buttons.set_button_color("Stop", definitions.BLACK)
+        push.buttons.set_button_color("Select", definitions.BLACK)
+        push.buttons.set_button_color("Clip", definitions.BLACK)
+
         super().deactivate()
         self.app.pads_need_update = True
         self.app.buttons_need_update = True
@@ -177,6 +188,17 @@ class SessionMode(MelodicMode):
                     anim = push2_python.constants.ANIMATION_STATIC
 
                 push.pads.set_pad_color((r, c), color, anim)
+
+    def update_buttons(self):
+        push = self.push
+
+        # Toujours allumés en mode Session
+        push.buttons.set_button_color("Delete", definitions.WHITE)
+        push.buttons.set_button_color("Duplicate", definitions.WHITE)
+        push.buttons.set_button_color("Quantize", definitions.WHITE)
+        push.buttons.set_button_color("Stop", definitions.WHITE)
+        push.buttons.set_button_color("Select", definitions.WHITE)
+        push.buttons.set_button_color("Clip", definitions.WHITE)
 
     # -----------------------------------------------------------
     #  STEP CALLBACK (PLAYBACK / RECORD)
