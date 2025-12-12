@@ -700,3 +700,69 @@ class MIDICCMode(PyshaMode):
         # ---- 6) Rafraîchissement Push ----
         self.app.buttons_need_update = True
         self.app.display_render_needed = True
+
+    def draw_clip_grid(self, ctx, clip_length, clip_events, playhead_step):
+        """
+        Affiche une mini-grille 16 pas représentant tout le clip.
+        - clip_length : longueur totale du clip (steps)
+        - clip_events : clip.data
+        - playhead_step : position courante dans le clip
+        """
+
+        if clip_length <= 0:
+            return
+
+        grid_cols = 16
+
+        display_w = push2_python.constants.DISPLAY_LINE_PIXELS
+        display_h = push2_python.constants.DISPLAY_N_LINES
+
+        # zone droite du display
+        x0 = display_w // 2
+        x1 = display_w
+        y0 = display_h - 40
+        height = 10
+
+        col_width = (x1 - x0) / grid_cols
+
+        ctx.save()
+
+        # fond
+        ctx.set_source_rgb(0, 0, 0)
+        ctx.rectangle(x0, y0, x1 - x0, height)
+        ctx.fill()
+
+        # présence de notes
+        for ev in clip_events:
+            start = ev.get("start")
+            if start is None:
+                continue
+
+            col = int((start / float(clip_length)) * grid_cols)
+            col = max(0, min(grid_cols - 1, col))
+
+            r, g, b = definitions.get_color_rgb_float(definitions.GRAY_LIGHT)
+            ctx.set_source_rgb(r, g, b)
+            ctx.rectangle(
+                x0 + col * col_width,
+                y0,
+                col_width - 1,
+                height
+            )
+            ctx.fill()
+
+        # playhead
+        play_col = int((playhead_step / float(clip_length)) * grid_cols)
+        play_col = max(0, min(grid_cols - 1, play_col))
+
+        r, g, b = definitions.get_color_rgb_float(definitions.BLUE)
+        ctx.set_source_rgb(r, g, b)
+        ctx.rectangle(
+            x0 + play_col * col_width,
+            y0,
+            col_width - 1,
+            height
+        )
+        ctx.fill()
+
+        ctx.restore()

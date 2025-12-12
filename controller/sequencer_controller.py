@@ -559,6 +559,12 @@ class SequencerController:
         if event == "stop":
             self._tick_count = 0
             self.current_step = 0
+
+            # --- SESSION MODE V2 : ALL NOTES OFF ---
+            session_v2 = getattr(self.app, "session_mode_v2", None)
+            if session_v2:
+                session_v2._all_notes_off()
+
             return
 
         # 24ppqn → ticks MIDI

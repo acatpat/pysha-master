@@ -86,6 +86,10 @@ class SessionMode(MelodicMode):
         self.delete_is_held = False
         self.quantize_is_held = False
         self.duplicate_source = None  # (row, col) du clip source à dupliquer
+        self.selected_clip = None   # (scene, track)
+        self.select_pressed = False
+        self.clip_view_active = False
+
 
     # ----------------------------------------------------------------------
     #  UTILITAIRE : ALL NOTES OFF POUR UNE PISTE (colonne)
@@ -240,10 +244,17 @@ class SessionMode(MelodicMode):
                     # Arrêt rec à la prochaine mesure
                     if clip.state == Clip.STATE_WAIT_END_RECORD:
                         if clip.record_start_step is not None:
-                            clip.length = max(
-                                clip.length,
-                                self.global_step - clip.record_start_step
+                            # longueur = dernière note enregistrée
+                            if clip.length <= 0:
+                                clip.length = 1
+
+                            # figer la longueur sur un multiple de mesure
+                            steps_per_measure = num_steps
+                            clip.length = (
+                                ((clip.length + steps_per_measure - 1) // steps_per_measure)
+                                * steps_per_measure
                             )
+
                         clip.state = Clip.STATE_QUEUED
                         clip.playhead_step = 0
                         clip.stop_after_end = False
@@ -374,10 +385,16 @@ class SessionMode(MelodicMode):
     # GESTION PADS
     # -----------------------------------------------------------
     def on_pad_pressed(self, pad_n, pad_ij, velocity):
+        row, col = pad_ij
+        # --- SELECT + PAD → sélection clip ---
+        if self.select_pressed:
+            self.select_clip(row, col)
+            return
+
         if velocity == 0:
             return False
 
-        row, col = pad_ij
+
         clip = self.clips.get_clip(row, col)
 
         # ---------------------------------------------------
@@ -548,6 +565,18 @@ class SessionMode(MelodicMode):
 
         return False
 
+    def select_clip(self, scene, track):
+        """
+        Sélectionne un clip sans déclencher d'action (UI only).
+        """
+        self.selected_clip = (scene, track)
+
+        # Miroir global (pour display Push plus tard)
+        self.app.selected_clip = self.selected_clip
+
+        # Forcer le refresh visuel des pads
+        self.app.pads_need_update = True
+
 
     # -----------------------------------------------------------
     # BOUTONS (Shift, Duplicate, Delete, Quantize)
@@ -573,6 +602,26 @@ class SessionMode(MelodicMode):
             print("[SESSION] Quantize button held")
             return True
 
+        if button_name == "Select":
+            self.select_pressed = True
+            return True
+
+        if button_name == "Clip":
+            # Activer la vue Clip uniquement si un clip est sélectionné
+            if self.selected_clip is not None:
+                self.clip_view_active = True
+                self.app.clip_view_active = True  # miroir global (display plus tard)
+                print(f"[SESSION] Clip View ON for clip {self.selected_clip}")
+                return True
+            return False
+
+        if button_name == "Session":
+            self.clip_view_active = False
+            self.app.clip_view_active = False
+            print("[SESSION] Clip View OFF → back to Session")
+            return False
+
+
         return False
 
     def on_button_released(self, button_name):
@@ -589,6 +638,10 @@ class SessionMode(MelodicMode):
         if button_name == "Delete":
             self.delete_is_held = False
             print("[SESSION] Delete button released")
+            return True
+        
+        if button_name == "Select":
+            self.select_pressed = False
             return True
 
         if button_name == "Quantize":
@@ -635,10 +688,116 @@ class SessionMode(MelodicMode):
         if steps_per_measure is None:
             steps_per_measure = 16
 
-        # --- 5) Position dans la mesure ---
-        step_in_measure = current_step % steps_per_measure
+        # -------------------------------------------------------
+        # CLIP VIEW : grille du clip sélectionné
+        # -------------------------------------------------------
+        if getattr(self, "clip_view_active", False) and self.selected_clip is not None:
+            scene, track = self.selected_clip
+            clip = self.clips.get_clip(scene, track)
 
-        # --- 6) Appel au dessin du mode MIDI-CC ---
+            if clip.length <= 0:
+                return
+
+            mcc = getattr(self.app, "midi_cc_mode", None)
+            if mcc is None:
+                return
+
+            mcc.draw_clip_grid(
+                ctx,
+                clip.length,
+                clip.data,
+                clip.playhead_step
+            )
+            return
+
+
+
+        # -------------------------------------------------------
+        # CLIP VIEW (V1) : barre d’avancement du clip sélectionné
+        # -------------------------------------------------------
+        if getattr(self, "clip_view_active", False) and self.selected_clip is not None:
+            row, col = self.selected_clip
+            clip = self.clips.get_clip(row, col)
+
+            # Clip valide ?
+            if clip.length > 0:
+                mcc = getattr(self.app, "midi_cc_mode", None)
+                if mcc is not None:
+                    # playhead_step est déjà relatif au clip
+                    step_in_clip = clip.playhead_step % clip.length
+                    mcc.draw_measure_progress(
+                        ctx,
+                        step_in_clip,
+                        clip.length
+                    )
+                # -----------------------------
+                # MINI GRID 16 STEPS (CLIP VIEW)
+                # -----------------------------
+                grid_cols = 16
+                grid = [0] * grid_cols
+
+                # Marquer les steps contenant des notes
+                for ev in clip.data:
+                    start = ev.get("start")
+                    end = ev.get("end")
+                    if start is None:
+                        continue
+
+                    if end is None:
+                        end = start + 1
+
+                    for s in range(start, end):
+                        col = int(s * grid_cols / clip.length)
+                        col = max(0, min(grid_cols - 1, col))
+                        grid[col] = 1
+
+                # Position du playhead
+                play_col = int(step_in_clip * grid_cols / clip.length)
+                play_col = max(0, min(grid_cols - 1, play_col))
+
+                # -----------------------------
+                # DESSIN
+                # -----------------------------
+                display_w = push2_python.constants.DISPLAY_LINE_PIXELS
+                display_h = push2_python.constants.DISPLAY_N_LINES
+
+                x0 = display_w // 2   # moitié droite de l'écran
+                y0 = display_h - 40
+                cell_w = (display_w // 2) / grid_cols
+                cell_h = 8
+
+                ctx.save()
+
+                for i in range(grid_cols):
+                    if i == play_col:
+                        ctx.set_source_rgb(0.2, 0.6, 1.0)   # playhead (bleu)
+                    elif grid[i]:
+                        ctx.set_source_rgb(0.8, 0.8, 0.8)   # note présente
+                    else:
+                        ctx.set_source_rgb(0.15, 0.15, 0.15)  # vide
+
+                    ctx.rectangle(
+                        x0 + i * cell_w,
+                        y0,
+                        cell_w - 1,
+                        cell_h
+                    )
+                    ctx.fill()
+
+                ctx.restore()
+
+
+                return
+
+
+        # -------------------------------------------------------
+        # SESSION VIEW : barre d’avancement de la mesure
+        # -------------------------------------------------------
         mcc = getattr(self.app, "midi_cc_mode", None)
         if mcc is not None:
-            mcc.draw_measure_progress(ctx, step_in_measure, steps_per_measure)
+            step_in_measure = current_step % steps_per_measure
+            mcc.draw_measure_progress(
+                ctx,
+                step_in_measure,
+                steps_per_measure
+            )

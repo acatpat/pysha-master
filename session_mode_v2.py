@@ -268,3 +268,48 @@ class SessionModeV2:
             self._send_note_off(n)
         self.active_notes.clear()
         self.pending_note_offs.clear()
+
+    def export_clip_to_midi(self, clip, filepath, ppqn=96):
+        """
+        Exporte un clip GRID vers un fichier MIDI standard.
+        Compatible REAPER / Ableton.
+        """
+        mid = mido.MidiFile(ticks_per_beat=ppqn)
+        track = mido.MidiTrack()
+        mid.tracks.append(track)
+
+        ticks_per_step = ppqn // 4  # 1/16
+
+        events = []
+
+        for step, notes in clip.grid.items():
+            for ev in notes:
+                start_tick = step * ticks_per_step
+                end_tick = start_tick + ev["duration_steps"] * ticks_per_step
+
+                events.append((start_tick, mido.Message(
+                    "note_on",
+                    note=ev["note"],
+                    velocity=ev["velocity"],
+                    channel=0,
+                    time=0
+                )))
+                events.append((end_tick, mido.Message(
+                    "note_off",
+                    note=ev["note"],
+                    velocity=0,
+                    channel=0,
+                    time=0
+                )))
+
+        # Trier par temps
+        events.sort(key=lambda e: e[0])
+
+        # Convertir en delta-time
+        last_tick = 0
+        for tick, msg in events:
+            msg.time = tick - last_tick
+            track.append(msg)
+            last_tick = tick
+
+        mid.save(filepath)
