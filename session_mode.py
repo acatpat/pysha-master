@@ -597,3 +597,48 @@ class SessionMode(MelodicMode):
             return True
 
         return False
+
+    # -----------------------------------------------------------
+    # AFFICHAGE PUSH 2 : barre d’avancement de mesure
+    # -----------------------------------------------------------
+    def update_display(self, ctx, w, h):
+        """
+        Étend l'affichage du SessionMode (hérité de MelodicMode)
+        et ajoute une barre d’avancement de la mesure.
+        """
+        # --- 1) Rendu normal du MelodicMode ---
+        super().update_display(ctx, w, h)
+
+        # --- 2) Afficher la barre seulement si SessionMode est actif ---
+        if not self.app.is_mode_active(self):
+            return
+
+        # --- 3) Récupération du séquenceur ---
+        seq = getattr(self.app, "sequencer_controller", None)
+        if seq is None:
+            return
+
+        current_step = getattr(seq, "current_step", 0)
+
+        # --- 4) Calcul du nombre de steps par mesure ---
+        # Priorité 1 : un attribut direct (si existe)
+        steps_per_measure = getattr(seq, "steps_per_measure", None)
+
+        # Priorité 2 : steps_per_beat * beats_per_measure
+        if steps_per_measure is None:
+            steps_per_beat = getattr(seq, "steps_per_beat", None)
+            beats_per_measure = getattr(seq, "beats_per_measure", None)
+            if steps_per_beat is not None and beats_per_measure is not None:
+                steps_per_measure = steps_per_beat * beats_per_measure
+
+        # Fallback : 16 steps par mesure (classique Push)
+        if steps_per_measure is None:
+            steps_per_measure = 16
+
+        # --- 5) Position dans la mesure ---
+        step_in_measure = current_step % steps_per_measure
+
+        # --- 6) Appel au dessin du mode MIDI-CC ---
+        mcc = getattr(self.app, "midi_cc_mode", None)
+        if mcc is not None:
+            mcc.draw_measure_progress(ctx, step_in_measure, steps_per_measure)

@@ -250,6 +250,56 @@ class MIDICCMode(PyshaMode):
         else:
             self.push.buttons.set_button_color(push2_python.constants.BUTTON_PAGE_RIGHT, definitions.BLACK)
 
+    def draw_measure_progress(self, ctx, current_step, total_steps):
+        """
+        Dessine une barre d’avancement de la mesure.
+        Style et structure identiques à _draw_sampler_waveform.
+        S’affiche dans la même zone basse que le waveform sampler.
+        """
+        # Vérification des valeurs
+        if total_steps is None or total_steps <= 0:
+            return
+        if current_step is None:
+            return
+
+        # Dimensions écran Push 2
+        display_w = push2_python.constants.DISPLAY_LINE_PIXELS
+        display_h = push2_python.constants.DISPLAY_N_LINES
+
+        # Même zone horizontale que le waveform : moitié gauche
+        x0 = 0
+        x1 = display_w // 2
+        region_width = max(2, x1 - x0)
+
+        # Zone verticale : exactement la même base que le waveform
+        # (top=30, bottom=display_h - 40) -> on place la barre juste AU-DESSOUS
+        top = display_h - 40
+        height = 6     # barre fine
+        y0 = top + 5   # petit décalage pour ne pas toucher le waveform
+        y1 = y0 + height
+
+        # Nettoyage de la zone
+        ctx.save()
+        ctx.set_source_rgb(0.0, 0.0, 0.0)
+        ctx.rectangle(x0, y0, region_width, height)
+        ctx.fill()
+
+        # Avancement (0..1)
+        progress = current_step / float(total_steps)
+        progress = max(0.0, min(1.0, progress))
+        bar_width = int(region_width * progress)
+
+        # Couleur de la barre (bleu clair)
+        r, g, b = definitions.get_color_rgb_float(definitions.BLUE)
+        ctx.set_source_rgb(r, g, b)
+
+        # Dessin du segment
+        ctx.rectangle(x0, y0, bar_width, height)
+        ctx.fill()
+
+        ctx.restore()
+
+
     def _draw_sampler_waveform(self, ctx, note):
         """
         Dessine l'onde du sample 'note' sur les 4 premiers x_part (0–3),
