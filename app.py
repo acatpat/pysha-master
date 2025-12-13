@@ -1029,6 +1029,8 @@ class PyshaApp(object):
 
 
 
+
+
 # Bind push action handlers with class methods
 @push2_python.on_encoder_rotated()
 def on_encoder_rotated(_, encoder_name, increment):
