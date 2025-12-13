@@ -19,10 +19,13 @@ class Clip:
 
         # Enregistrement
         self.record_start_step = None  # step global au début REC
+        self.record_stop_measure = None
 
         # Lecture
         self.playhead_step = 0        # position courante dans le clip (0..length-1)
         self.stop_after_end = False   # si True → s'arrête à la fin du clip
+
+
 
     def clear(self):
         self.data = []
@@ -80,6 +83,8 @@ class SessionMode(MelodicMode):
 
         # Compteur global de steps séquenceur (indépendant de current_step 0..31)
         self.global_step = 0
+        self.steps_per_measure = 16  # valeur par défaut, mise à jour par on_sequencer_step
+
 
         # --- Nouveaux états pour Duplicate / Delete / Quantize ---
         self.duplicate_is_held = False
@@ -89,7 +94,6 @@ class SessionMode(MelodicMode):
         self.selected_clip = None   # (scene, track)
         self.select_pressed = False
         self.clip_view_active = False
-
 
     # ----------------------------------------------------------------------
     #  UTILITAIRE : ALL NOTES OFF POUR UNE PISTE (colonne)
@@ -215,6 +219,7 @@ class SessionMode(MelodicMode):
         """
         # Avance du step global
         self.global_step += 1
+        self.steps_per_measure = num_steps
 
         app = self.app
         tsm = app.track_selection_mode
@@ -226,42 +231,59 @@ class SessionMode(MelodicMode):
         changed_states = False
 
         if is_measure_start:
+            current_measure = self.global_step // num_steps
+
             for r in range(8):
                 for c in range(8):
                     clip = self.clips.get_clip(r, c)
 
-                    # Démarrage rec à la prochaine mesure
+                    # -------------------------
+                    # START RECORD
+                    # -------------------------
                     if clip.state == Clip.STATE_QUEUED_RECORD:
                         clip.state = Clip.STATE_RECORDING
                         clip.data = []
                         clip.length = 0
                         clip.record_start_step = self.global_step
+                        clip.record_stop_measure = None
                         clip.playhead_step = 0
                         clip.stop_after_end = False
-                        print(f"[SESSION] START RECORDING ({r},{c}) at global_step={self.global_step}")
-                        changed_states = True
 
-                    # Arrêt rec à la prochaine mesure
-                    if clip.state == Clip.STATE_WAIT_END_RECORD:
-                        if clip.record_start_step is not None:
-                            # longueur = dernière note enregistrée
-                            if clip.length <= 0:
-                                clip.length = 1
+                        print(
+                            f"[SESSION] START RECORDING ({r},{c}) "
+                            f"at global_step={self.global_step}"
+                        )
+                        self.app.pads_need_update = True
 
-                            # figer la longueur sur un multiple de mesure
-                            steps_per_measure = num_steps
-                            clip.length = (
-                                ((clip.length + steps_per_measure - 1) // steps_per_measure)
-                                * steps_per_measure
-                            )
+                    # -------------------------
+                    # STOP RECORD (mesure cible)
+                    # -------------------------
+                    if (
+                        clip.state == Clip.STATE_WAIT_END_RECORD
+                        and clip.record_stop_measure == current_measure
+                    ):
+                        start_measure = clip.record_start_step // num_steps
+                        recorded_measures = current_measure - start_measure
+                        if recorded_measures < 1:
+                            recorded_measures = 1
 
+                        clip.length = recorded_measures * num_steps
                         clip.state = Clip.STATE_QUEUED
                         clip.playhead_step = 0
                         clip.stop_after_end = False
-                        print(f"[SESSION] STOP RECORD ({r},{c}) at global_step={self.global_step}, length={clip.length}")
-                        # Sécurité : couper les notes de cette piste
+                        clip.record_stop_measure = None
+
+                        print(
+                            f"[SESSION] STOP RECORD ({r},{c}) "
+                            f"→ length={clip.length} steps "
+                            f"({recorded_measures} bars)"
+                        )
+
                         self._send_all_notes_off_for_track(c)
-                        changed_states = True
+                        self.app.pads_need_update = True
+
+
+
 
         if changed_states:
             app.pads_need_update = True
@@ -497,10 +519,14 @@ class SessionMode(MelodicMode):
 
         # --- Pendant RECORDING : demander arrêt à prochaine mesure ---
         if clip.state == Clip.STATE_RECORDING:
+            steps_per_measure = getattr(self, "steps_per_measure", 16)
+            clip.record_stop_measure = self.global_step // steps_per_measure + 1
             clip.state = Clip.STATE_WAIT_END_RECORD
-            print(f"[SESSION] Pad ({row},{col}) → WAIT_END_RECORD (stop rec at next measure)")
+            print(
+                f"[SESSION] STOP REC requested → will stop at measure {clip.record_stop_measure}"
+            )
             self.app.pads_need_update = True
-            return True
+
 
         return False
 
@@ -558,10 +584,10 @@ class SessionMode(MelodicMode):
             for ev in reversed(clip.data):
                 if ev.get("note") == msg.note and ev.get("end") is None:
                     ev["end"] = clip_step
-                    clip.length = max(clip.length, clip_step + 1)
                     print(f"[SESSION-REC] NOTE_OFF note={msg.note} clip_step={clip_step}")
                     break
             return True
+
 
         return False
 
@@ -582,6 +608,7 @@ class SessionMode(MelodicMode):
     # BOUTONS (Shift, Duplicate, Delete, Quantize)
     # -----------------------------------------------------------
     def on_button_pressed(self, button_name):
+        print(f"[SESSION] on_button_pressed: {button_name}")
         if button_name == "Shift":
             self.shift_is_held = True
             return True
@@ -620,6 +647,21 @@ class SessionMode(MelodicMode):
             self.app.clip_view_active = False
             print("[SESSION] Clip View OFF → back to Session")
             return False
+
+        if button_name == "Browse":
+
+            scene, track = self.selected_clip
+            clip = self.clips.get_clip(scene, track)
+
+
+            self.export_clip_to_midi(
+                clip,
+                filename=f"clip_{scene}_{track}.mid",
+                track_col=track
+            )
+
+            return True
+
 
 
         return False
@@ -801,3 +843,105 @@ class SessionMode(MelodicMode):
                 step_in_measure,
                 steps_per_measure
             )
+
+    def export_clip_to_midi(self, clip, filename, track_col=0):
+        """
+        Exporte un clip SessionMode vers un fichier MIDI standard.
+        Ouvrable dans Reaper / Ableton / Bitwig.
+        """
+
+        if clip is None or clip.length <= 0 or not clip.data:
+            print("[SESSION] Export MIDI aborted: empty clip")
+            return
+
+        import os
+
+        # --- dossier d’export fixe ---
+        export_dir = os.path.join(os.getcwd(), "midi_exports")
+        os.makedirs(export_dir, exist_ok=True)
+
+        # --- nom de fichier automatique si non fourni ---
+        if not filename:
+            filename = "clip.mid"
+
+        # --- chemin absolu ---
+        filename = os.path.join(export_dir, filename)
+
+
+        import mido
+
+        # --- paramètres MIDI ---
+        ticks_per_beat = 480
+        steps_per_beat = 4          # 1/16 → 4 steps par noire
+        ticks_per_step = ticks_per_beat // steps_per_beat
+
+        bpm = getattr(self.app.synths_midi, "bpm", 120)
+        tempo = mido.bpm2tempo(bpm)
+
+        mid = mido.MidiFile(ticks_per_beat=ticks_per_beat)
+        track = mido.MidiTrack()
+        mid.tracks.append(track)
+
+        # --- tempo ---
+        track.append(mido.MetaMessage("set_tempo", tempo=tempo, time=0))
+
+        # --- collect events ---
+        events = []
+
+        for ev in clip.data:
+            note = ev["note"]
+            vel = ev.get("velocity", 100)
+            start = ev.get("start", 0)
+            end = ev.get("end", start + 1)
+
+            start_tick = int(start * ticks_per_step)
+            end_tick = int(end * ticks_per_step)
+
+            events.append((start_tick, "on", note, vel))
+            events.append((end_tick, "off", note, 0))
+
+        # --- trier par temps ---
+        events.sort(key=lambda e: e[0])
+
+        # --- écrire avec delta-times ---
+        last_tick = 0
+        for tick, etype, note, vel in events:
+            delta = tick - last_tick
+            last_tick = tick
+
+            if etype == "on":
+                track.append(
+                    mido.Message(
+                        "note_on",
+                        note=int(note),
+                        velocity=int(vel),
+                        time=delta
+                    )
+                )
+            else:
+                track.append(
+                    mido.Message(
+                        "note_off",
+                        note=int(note),
+                        velocity=0,
+                        time=delta
+                    )
+                )
+
+        # --- forcer la longueur exacte du clip ---
+        total_clip_ticks = clip.length * ticks_per_step
+
+        remaining = total_clip_ticks - last_tick
+        if remaining < 0:
+            remaining = 0
+
+        # --- fin de piste ---
+        track.append(mido.MetaMessage("end_of_track", time=remaining))
+
+
+        # --- sauvegarde ---
+        import os
+        print("[SESSION] MIDI export path:", os.path.abspath(filename))
+
+        mid.save(filename)
+        print(f"[SESSION] Clip exported to MIDI → {filename}")

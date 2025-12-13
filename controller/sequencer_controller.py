@@ -490,27 +490,27 @@ class SequencerController:
         try:
             modes = getattr(self.app, "active_modes", [])
             for mode in modes:
+                # --- EXCLURE SessionMode : appelé plus bas comme moteur global ---
+                if mode is self.app.session_mode:
+                    continue
+
                 cb = getattr(mode, "on_sequencer_step", None)
                 if cb:
                     try:
-                        # on passe aussi num_steps au cas où Session en a besoin
                         cb(next_step, is_measure_start, num_steps)
-            
                     except Exception:
                         pass
         
         except Exception:
             pass
 
-        # --- SESSION MODE TOUJOURS NOTIFIÉ ---
+        # --- SESSION MODE (MOTEUR GLOBAL, APPEL UNIQUE) ---
         session = getattr(self.app, "session_mode", None)
-        if session:
-            cb = getattr(session, "on_sequencer_step", None)
-            if cb:
-                try:
-                    cb(next_step, is_measure_start, num_steps)
-                except Exception:
-                    pass
+        if session is not None:
+            try:
+                session.on_sequencer_step(next_step, is_measure_start, num_steps)
+            except Exception:
+                pass
 
 
         # --- Feedback Push 2 du SEQUENCER (Rhythmic) ---
