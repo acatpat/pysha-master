@@ -476,7 +476,17 @@ class MIDICCMode(PyshaMode):
 
     def update_display(self, ctx, w, h):
 
-        if not self.app.is_mode_active(self.app.settings_mode):
+        session = getattr(self.app, "session_mode", None)
+
+        if (
+            not self.app.is_mode_active(self.app.settings_mode)
+            and not (
+                session is not None
+                and self.app.is_mode_active(session)
+                and getattr(session, "clip_view_active", False)
+            )
+        ):
+
             # If settings mode is active, don't draw the upper parts of the screen because settings page will
             # "cover them"
 
@@ -563,6 +573,55 @@ class MIDICCMode(PyshaMode):
 
 
     def on_encoder_rotated(self, encoder_name, increment):
+        # ---------------------------------------------------
+        # CLIP VIEW (SessionMode) : scroll via encodeurs
+        # ---------------------------------------------------
+        session = getattr(self.app, "session_mode", None)
+
+        if (
+            session is not None
+            and self.app.is_mode_active(session)
+            and session.clip_view_active
+            and session.selected_clip is not None
+        ):
+            # Track1 → scroll vertical
+            if encoder_name == push2_python.constants.ENCODER_TRACK1_ENCODER:
+                session.clip_view_note_min = max(
+                    0, min(127 - 12, session.clip_view_note_min + increment)
+                )
+                self.app.display_render_needed = True
+                return True
+
+            # Track2 → scroll horizontal
+            if encoder_name == push2_python.constants.ENCODER_TRACK2_ENCODER:
+                steps = getattr(session, "steps_per_measure", 16)
+                session.clip_view_start_step = max(
+                    0, session.clip_view_start_step + increment * steps
+                )
+                self.app.display_render_needed = True
+                return True
+
+            # Track3 → sélection note
+            if encoder_name == push2_python.constants.ENCODER_TRACK3_ENCODER:
+                session.clip_view_select_event(1 if increment > 0 else -1)
+                self.app.display_render_needed = True
+                return True
+
+            # Track4 → déplacement temporel
+            if encoder_name == push2_python.constants.ENCODER_TRACK4_ENCODER:
+                session.clip_view_move_selected_in_time(increment)
+                self.app.display_render_needed = True
+                return True
+
+            # Track5 → déplacement pitch
+            if encoder_name == push2_python.constants.ENCODER_TRACK5_ENCODER:
+                session.clip_view_move_selected_in_pitch(increment)
+                self.app.display_render_needed = True
+                return True
+
+
+
+
         try:
             encoder_num = [
                 push2_python.constants.ENCODER_TRACK1_ENCODER,

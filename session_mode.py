@@ -95,6 +95,15 @@ class SessionMode(MelodicMode):
         self.select_pressed = False
         self.clip_view_active = False
 
+        # --- Clip View scroll ---
+        self.clip_view_note_min = 36      # note MIDI basse affichée
+        self.clip_view_start_step = 0     # step de début de la fenêtre
+
+
+        self.clip_view_selected_event_index = 0  # sélection note
+        self.clip_view_selected_event = None  # référence directe vers l'event sélectionné
+
+
     # ----------------------------------------------------------------------
     #  UTILITAIRE : ALL NOTES OFF POUR UNE PISTE (colonne)
     # ----------------------------------------------------------------------
@@ -699,12 +708,13 @@ class SessionMode(MelodicMode):
     def update_display(self, ctx, w, h):
         """
         Étend l'affichage du SessionMode (hérité de MelodicMode)
-        et ajoute une barre d’avancement de la mesure.
+        et ajoute la vue Clip (piano-roll) + sélection visuelle.
         """
+
         # --- 1) Rendu normal du MelodicMode ---
         super().update_display(ctx, w, h)
 
-        # --- 2) Afficher la barre seulement si SessionMode est actif ---
+        # --- 2) Afficher seulement si SessionMode actif ---
         if not self.app.is_mode_active(self):
             return
 
@@ -715,23 +725,20 @@ class SessionMode(MelodicMode):
 
         current_step = getattr(seq, "current_step", 0)
 
-        # --- 4) Calcul du nombre de steps par mesure ---
-        # Priorité 1 : un attribut direct (si existe)
+        # --- 4) Calcul steps par mesure ---
         steps_per_measure = getattr(seq, "steps_per_measure", None)
 
-        # Priorité 2 : steps_per_beat * beats_per_measure
         if steps_per_measure is None:
             steps_per_beat = getattr(seq, "steps_per_beat", None)
             beats_per_measure = getattr(seq, "beats_per_measure", None)
             if steps_per_beat is not None and beats_per_measure is not None:
                 steps_per_measure = steps_per_beat * beats_per_measure
 
-        # Fallback : 16 steps par mesure (classique Push)
         if steps_per_measure is None:
             steps_per_measure = 16
 
         # -------------------------------------------------------
-        # CLIP VIEW : grille du clip sélectionné
+        # CLIP VIEW : piano-roll du clip sélectionné
         # -------------------------------------------------------
         if getattr(self, "clip_view_active", False) and self.selected_clip is not None:
             scene, track = self.selected_clip
@@ -740,100 +747,146 @@ class SessionMode(MelodicMode):
             if clip.length <= 0:
                 return
 
-            mcc = getattr(self.app, "midi_cc_mode", None)
-            if mcc is None:
-                return
+            # --- paramètres affichage ---
+            steps_per_measure = getattr(self, "steps_per_measure", 16)
+            VISIBLE_MEASURES = 4
+            VISIBLE_STEPS = VISIBLE_MEASURES * steps_per_measure
+            VISIBLE_NOTES = 12
 
-            mcc.draw_clip_grid(
-                ctx,
-                clip.length,
-                clip.data,
-                clip.playhead_step
-            )
+            display_w = push2_python.constants.DISPLAY_LINE_PIXELS
+            display_h = push2_python.constants.DISPLAY_N_LINES
+
+            x0 = 0
+            width = display_w
+
+            top = 30
+            bottom = display_h - 40
+            height = bottom - top
+            y0 = top
+
+            # --- fenêtre temporelle ---
+            if clip.length <= VISIBLE_STEPS:
+                window_steps = clip.length
+                start_step = 0
+            else:
+                start_step = (clip.playhead_step // steps_per_measure) * steps_per_measure
+                window_steps = VISIBLE_STEPS
+
+            end_step = start_step + window_steps
+
+            # --- fenêtre verticale ---
+            note_min = self.clip_view_note_min
+            note_max = note_min + VISIBLE_NOTES - 1
+            note_h = height / VISIBLE_NOTES
+
+            ctx.save()
+
+            # --- fond ---
+            ctx.set_source_rgb(0, 0, 0)
+            ctx.rectangle(x0, y0, width, height)
+            ctx.fill()
+
+            # --- grille horizontale (notes) ---
+            r, g, b = definitions.get_color_rgb_float(definitions.GRAY_DARK)
+            ctx.set_source_rgb(r, g, b)
+            ctx.set_line_width(1)
+            for i in range(VISIBLE_NOTES + 1):
+                y = y0 + i * note_h
+                ctx.move_to(x0, y)
+                ctx.line_to(x0 + width, y)
+            ctx.stroke()
+
+            # --- grille verticale (mesures) ---
+            measure_w = width / VISIBLE_MEASURES
+            r, g, b = definitions.get_color_rgb_float(definitions.GRAY_LIGHT)
+            ctx.set_source_rgb(r, g, b)
+            ctx.set_line_width(1.5)
+            for i in range(VISIBLE_MEASURES + 1):
+                x = x0 + i * measure_w
+                ctx.move_to(x, y0)
+                ctx.line_to(x, y0 + height)
+            ctx.stroke()
+            """""
+            # ---------------------------------------------------
+            # SÉLECTION VISUELLE (groupe basé sur l'event sélectionné)
+            # ---------------------------------------------------
+            selected_group = []
+
+            ref = self.clip_view_selected_event
+            if ref is not None:
+                ref_start = ref.get("start")
+                if ref_start is not None:
+                    selected_group = [
+                        ev for ev in clip.data if ev.get("start") == ref_start
+                    ]
+            """
+            # --- dessin des notes ---
+            for ev in clip.data:
+                start = ev.get("start")
+                end = ev.get("end")
+                note = ev.get("note")
+
+                if start is None or end is None or note is None:
+                    continue
+                if end < start_step or start > end_step:
+                    continue
+                if note < note_min or note > note_max:
+                    continue
+
+                s0 = max(start, start_step)
+                s1 = min(end, end_step)
+
+                x_start = x0 + ((s0 - start_step) / window_steps) * width
+                x_end = x0 + ((s1 - start_step) / window_steps) * width
+
+                note_index = note_max - note
+                y = y0 + note_index * note_h
+
+                # --- couleur ---
+                # --- remplissage ---
+                if ev is self.clip_view_selected_event:
+                    r, g, b = definitions.get_color_rgb_float(definitions.ORANGE)
+                else:
+                    r, g, b = definitions.get_color_rgb_float(definitions.GRAY_LIGHT)
+
+                ctx.set_source_rgb(r, g, b)
+                ctx.rectangle(
+                    x_start,
+                    y + 1,
+                    max(1, x_end - x_start),
+                    note_h - 2
+                )
+                ctx.fill()
+
+                # --- contour sélection ---
+                if ev is self.clip_view_selected_event:
+                    r, g, b = definitions.get_color_rgb_float(definitions.WHITE)
+                    ctx.set_source_rgb(r, g, b)
+                    ctx.set_line_width(2)
+                    ctx.rectangle(
+                        x_start,
+                        y + 1,
+                        max(1, x_end - x_start),
+                        note_h - 2
+                    )
+                    ctx.stroke()
+
+
+            # --- playhead ---
+            if start_step <= clip.playhead_step <= end_step:
+                x_play = x0 + ((clip.playhead_step - start_step) / window_steps) * width
+                r, g, b = definitions.get_color_rgb_float(definitions.BLUE)
+                ctx.set_source_rgb(r, g, b)
+                ctx.set_line_width(2)
+                ctx.move_to(x_play, y0)
+                ctx.line_to(x_play, y0 + height)
+                ctx.stroke()
+
+            ctx.restore()
             return
 
-
-
         # -------------------------------------------------------
-        # CLIP VIEW (V1) : barre d’avancement du clip sélectionné
-        # -------------------------------------------------------
-        if getattr(self, "clip_view_active", False) and self.selected_clip is not None:
-            row, col = self.selected_clip
-            clip = self.clips.get_clip(row, col)
-
-            # Clip valide ?
-            if clip.length > 0:
-                mcc = getattr(self.app, "midi_cc_mode", None)
-                if mcc is not None:
-                    # playhead_step est déjà relatif au clip
-                    step_in_clip = clip.playhead_step % clip.length
-                    mcc.draw_measure_progress(
-                        ctx,
-                        step_in_clip,
-                        clip.length
-                    )
-                # -----------------------------
-                # MINI GRID 16 STEPS (CLIP VIEW)
-                # -----------------------------
-                grid_cols = 16
-                grid = [0] * grid_cols
-
-                # Marquer les steps contenant des notes
-                for ev in clip.data:
-                    start = ev.get("start")
-                    end = ev.get("end")
-                    if start is None:
-                        continue
-
-                    if end is None:
-                        end = start + 1
-
-                    for s in range(start, end):
-                        col = int(s * grid_cols / clip.length)
-                        col = max(0, min(grid_cols - 1, col))
-                        grid[col] = 1
-
-                # Position du playhead
-                play_col = int(step_in_clip * grid_cols / clip.length)
-                play_col = max(0, min(grid_cols - 1, play_col))
-
-                # -----------------------------
-                # DESSIN
-                # -----------------------------
-                display_w = push2_python.constants.DISPLAY_LINE_PIXELS
-                display_h = push2_python.constants.DISPLAY_N_LINES
-
-                x0 = display_w // 2   # moitié droite de l'écran
-                y0 = display_h - 40
-                cell_w = (display_w // 2) / grid_cols
-                cell_h = 8
-
-                ctx.save()
-
-                for i in range(grid_cols):
-                    if i == play_col:
-                        ctx.set_source_rgb(0.2, 0.6, 1.0)   # playhead (bleu)
-                    elif grid[i]:
-                        ctx.set_source_rgb(0.8, 0.8, 0.8)   # note présente
-                    else:
-                        ctx.set_source_rgb(0.15, 0.15, 0.15)  # vide
-
-                    ctx.rectangle(
-                        x0 + i * cell_w,
-                        y0,
-                        cell_w - 1,
-                        cell_h
-                    )
-                    ctx.fill()
-
-                ctx.restore()
-
-
-                return
-
-
-        # -------------------------------------------------------
-        # SESSION VIEW : barre d’avancement de la mesure
+        # SESSION VIEW : barre d’avancement de mesure
         # -------------------------------------------------------
         mcc = getattr(self.app, "midi_cc_mode", None)
         if mcc is not None:
@@ -945,3 +998,52 @@ class SessionMode(MelodicMode):
 
         mid.save(filename)
         print(f"[SESSION] Clip exported to MIDI → {filename}")
+
+    def clip_view_move_selected_in_time(self, delta_steps):
+        if self.selected_clip is None:
+            return
+
+        ev = self.clip_view_selected_event
+        if ev is None:
+            return
+
+        ev["start"] = max(0, ev["start"] + delta_steps)
+        if ev.get("end") is not None:
+            ev["end"] = max(ev["start"] + 1, ev["end"] + delta_steps)
+
+        # IMPORTANT : tri autorisé
+        scene, track = self.selected_clip
+        clip = self.clips.get_clip(scene, track)
+        clip.data.sort(key=lambda e: e.get("start", 0))
+
+
+    def clip_view_move_selected_in_pitch(self, delta_notes):
+        ev = self.clip_view_selected_event
+        if ev is None:
+            return
+
+        ev["note"] = max(0, min(127, ev["note"] + delta_notes))
+
+
+    def clip_view_select_event(self, direction):
+        if self.selected_clip is None:
+            return
+
+        scene, track = self.selected_clip
+        clip = self.clips.get_clip(scene, track)
+
+        if not clip or not clip.data:
+            return
+
+        # Toujours travailler sur une vue triée
+        sorted_events = sorted(clip.data, key=lambda ev: ev.get("start", 0))
+
+        # Si aucune sélection → première note
+        if self.clip_view_selected_event not in sorted_events:
+            self.clip_view_selected_event = sorted_events[0]
+            return
+
+        idx = sorted_events.index(self.clip_view_selected_event)
+        idx = max(0, min(len(sorted_events) - 1, idx + direction))
+
+        self.clip_view_selected_event = sorted_events[idx]

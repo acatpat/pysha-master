@@ -417,6 +417,7 @@ class PyshaApp(object):
             self.add_display_notification('Error reading preset')
             return False
 
+        """""
         instrument_ports = getattr(self.synths_midi, 'instrument_port_names', {}) or {}
         saved_tracks = data.get('tracks', [])
 
@@ -477,7 +478,7 @@ class PyshaApp(object):
 
         # --- MIROIR CENTRALISÉ POUR Synths_Midi (UI lit via get_instrument_*_port) ---
         self.synths_midi.instrument_port_names = instrument_ports
-
+        """
 
         # --------------------------------------------------------
         # ###     RESTORE SEQUENCER STATE (inchangé)           ###
